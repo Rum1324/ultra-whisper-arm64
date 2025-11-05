@@ -1,4 +1,4 @@
-name: ultra-whisper-arm64
+name: ultrawhisper
 description: "UltraWhisper v3 - whisper.cpp with Metal GPU acceleration"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -41,6 +41,7 @@ dependencies:
   # System integration
   hotkey_manager: ^0.2.3
   window_manager: ^0.4.2
+  desktop_multi_window: ^0.2.0
   
   # Audio capture and processing
   record: ^6.0.0

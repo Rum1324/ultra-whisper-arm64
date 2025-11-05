@@ -54,7 +54,7 @@ class _FloatingOverlayState extends State<FloatingOverlay>
         return Container(
           width: double.infinity,
           height: double.infinity,
-          margin: const EdgeInsets.all(8),
+          margin: const EdgeInsets.fromLTRB(8, 34, 8, 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
@@ -106,7 +106,7 @@ class _FloatingOverlayState extends State<FloatingOverlay>
     _updateWaveformData(state);
 
     return Expanded(
-      child: Container(
+      child: SizedBox(
         height: double.infinity,
         child: AnimatedBuilder(
           animation: _animationController,

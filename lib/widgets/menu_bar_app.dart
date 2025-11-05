@@ -25,6 +25,8 @@ class MenuBarApp extends StatelessWidget {
           itemBuilder: (context) => [
             PopupMenuItem<String>(
               value: 'toggle_recording',
+              enabled: state.recordingState == RecordingState.idle ||
+                       state.recordingState == RecordingState.recording,
               child: Row(
                 children: [
                   Icon(
@@ -42,8 +44,6 @@ class MenuBarApp extends StatelessWidget {
                   ),
                 ],
               ),
-              enabled: state.recordingState == RecordingState.idle ||
-                       state.recordingState == RecordingState.recording,
             ),
             
             const PopupMenuDivider(),

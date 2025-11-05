@@ -1,100 +1,81 @@
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
-import 'package:window_manager/window_manager.dart';
-import 'app_service.dart';
 
+/// Service for managing the settings window
 class SettingsWindowService {
-  static SettingsWindowService? _instance;
-  static SettingsWindowService get instance => _instance ??= SettingsWindowService._();
-  SettingsWindowService._();
-
+  WindowController? _settingsWindowController;
   bool _isSettingsWindowOpen = false;
-  Size? _originalSize;
-  Offset? _originalPosition;
-  bool? _originalAlwaysOnTop;
-  
+  int? _settingsWindowId;
+
   bool get isSettingsWindowOpen => _isSettingsWindowOpen;
+  int? get settingsWindowId => _settingsWindowId;
 
-  Future<void> openSettingsWindow(AppService appService) async {
-    if (_isSettingsWindowOpen) {
-      return;
+  /// Opens the settings window as a separate window
+  Future<void> openSettingsWindow() async {
+    // If window is already open, just focus it
+    if (_isSettingsWindowOpen && _settingsWindowController != null) {
+      try {
+        _settingsWindowController!.show();
+        return;
+      } catch (e) {
+        debugPrint('Failed to focus existing settings window: $e');
+        _isSettingsWindowOpen = false;
+        _settingsWindowController = null;
+      }
     }
 
-    _isSettingsWindowOpen = true;
-
-    // Store current window properties
-    await _storeOriginalWindowProperties();
-    
-    // Configure window for settings
-    await _configureSettingsWindow();
-  }
-
-  Future<void> _storeOriginalWindowProperties() async {
     try {
-      _originalSize = await windowManager.getSize();
-      _originalPosition = await windowManager.getPosition();
-      _originalAlwaysOnTop = await windowManager.isAlwaysOnTop();
+      // Create a new window
+      final window = await DesktopMultiWindow.createWindow('settings');
+
+      // Configure the window
+      window
+        ..setFrame(const Offset(100, 100) & const Size(700, 600))
+        ..setTitle('Settings - UltraWhisper')
+        ..center()
+        ..show();
+
+      _settingsWindowController = window;
+      _settingsWindowId = window.windowId;
+      _isSettingsWindowOpen = true;
+
+      debugPrint('Settings window opened successfully with ID: $_settingsWindowId');
     } catch (e) {
-      debugPrint('Error storing window properties: $e');
+      debugPrint('Failed to open settings window: $e');
+      _isSettingsWindowOpen = false;
+      _settingsWindowController = null;
+      _settingsWindowId = null;
     }
   }
 
-  Future<void> _configureSettingsWindow() async {
-    try {
-      // Set window properties for settings
-      await windowManager.setSize(const Size(900, 700));
-      await windowManager.setMinimumSize(const Size(700, 600));
-      await windowManager.center();
-      await windowManager.setTitle('UltraWhisper Settings');
-      
-      // Remove frameless and add title bar
-      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
-      await windowManager.setBackgroundColor(const Color(0xFF1A1A1A));
-      
-      // Set window controls
-      await windowManager.setResizable(true);
-      await windowManager.setClosable(true);
-      await windowManager.setMinimizable(true);
-      await windowManager.setMaximizable(true);
-      await windowManager.setAlwaysOnTop(false);
-      
-      await windowManager.show();
-      await windowManager.focus();
-    } catch (e) {
-      debugPrint('Error configuring settings window: $e');
-    }
-  }
-
+  /// Closes the settings window
   Future<void> closeSettingsWindow() async {
-    if (!_isSettingsWindowOpen) return;
-
-    _isSettingsWindowOpen = false;
-
-    // Restore original window properties
-    await _restoreOriginalWindowProperties();
+    if (_settingsWindowController != null) {
+      try {
+        await _settingsWindowController!.close();
+      } catch (e) {
+        debugPrint('Failed to close settings window: $e');
+      }
+    }
+    _markWindowClosed();
   }
 
-  Future<void> _restoreOriginalWindowProperties() async {
-    try {
-      // Restore original window configuration
-      if (_originalSize != null) {
-        await windowManager.setSize(_originalSize!);
-      }
-      
-      if (_originalPosition != null) {
-        await windowManager.setPosition(_originalPosition!);
-      }
-      
-      if (_originalAlwaysOnTop != null) {
-        await windowManager.setAlwaysOnTop(_originalAlwaysOnTop!);
-      }
-      
-      // Restore frameless style
-      await windowManager.setAsFrameless();
-      await windowManager.setBackgroundColor(Colors.transparent);
-      
-      await windowManager.show();
-    } catch (e) {
-      debugPrint('Error restoring window properties: $e');
-    }
+  /// Called when the settings window closes (either programmatically or by user)
+  void onSettingsWindowClosed() {
+    debugPrint('Settings window closed notification received');
+    _markWindowClosed();
+  }
+
+  /// Internal method to mark window as closed
+  void _markWindowClosed() {
+    _settingsWindowController = null;
+    _settingsWindowId = null;
+    _isSettingsWindowOpen = false;
+    debugPrint('Settings window state reset');
+  }
+
+  /// Disposes the service
+  void dispose() {
+    _markWindowClosed();
   }
 }

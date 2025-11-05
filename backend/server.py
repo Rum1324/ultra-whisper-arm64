@@ -110,13 +110,17 @@ class WhisperCppBackend:
             logger.info(f"Transcribing {len(audio_array)/16000:.2f}s of audio for session {session_id}")
 
             # Get language from session config, default to 'auto' for auto-detection
-            language = session.config.get('language', 'auto')
-            logger.info(f"Using language: {language}")
+            # Handle None/null values by using 'auto'
+            language = session.config.get('language') or 'auto'
+
+            # Convert 'auto' to None for whisper.cpp (None means auto-detect)
+            whisper_language = None if language == 'auto' else language
+            logger.info(f"Using language: {language} (whisper param: {whisper_language})")
 
             # Use the in-memory model - MUCH faster!
             result = self.model.transcribe(
                 audio_array,
-                language=language,
+                language=whisper_language,
                 n_threads=4
             )
 

@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'services/app_service.dart';
 import 'services/audio_service.dart';
 import 'services/settings_service.dart';
@@ -10,10 +12,24 @@ import 'services/backend_service.dart';
 import 'services/hotkey_service.dart';
 import 'services/paste_service.dart';
 import 'services/audio_cue_service.dart';
+import 'services/settings_window_service.dart';
 import 'widgets/app_content.dart';
+import 'windows/settings_window_entry.dart';
 
-void main() async {
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Handle window routing for desktop_multi_window
+  if (args.firstOrNull == 'multi_window') {
+    // args[1] is the window ID, args[2] is the argument
+    final argument = args[2];
+
+    // Route to appropriate window based on argument
+    if (argument == 'settings') {
+      settingsWindowMain();
+      return;
+    }
+  }
 
   // Initialize window manager for overlay functionality
   await windowManager.ensureInitialized();
@@ -50,6 +66,7 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
     final hotkeyService = HotkeyService();
     final pasteService = PasteService();
     final audioCueService = AudioCueService.instance;
+    final settingsWindowService = SettingsWindowService();
 
     _appService = AppService(
       audioService: audioService,
@@ -58,6 +75,7 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
       hotkeyService: hotkeyService,
       pasteService: pasteService,
       audioCueService: audioCueService,
+      settingsWindowService: settingsWindowService,
     );
 
     // Initialize audio cue service
@@ -74,6 +92,9 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
 
     // Listen for settings window state changes
     _appService.addListener(_handleAppServiceChanges);
+
+    // Set up message handler for multi-window communication
+    DesktopMultiWindow.setMethodHandler(_handleMethodCall);
 
     setState(() {
       _isInitialized = true;
@@ -92,7 +113,7 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
       center: false,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.normal,
+      titleBarStyle: TitleBarStyle.hidden,
       windowButtonVisibility: true,
     );
 
@@ -153,61 +174,26 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
   }
 
   void _handleAppServiceChanges() async {
+    // Settings window is now shown as a dialog overlay,
+    // so we don't need to reconfigure the main window
     if (!_isInitialized) return;
-
-    final state = _appService.state;
-    
-    // Handle settings window state changes
-    if (state.isSettingsWindowOpen) {
-      await _configureForSettingsWindow();
-    } else {
-      await _configureForOverlayWindow();
-    }
   }
 
-  Future<void> _configureForSettingsWindow() async {
-    try {
-      // Configure window for settings
-      await windowManager.setSize(const Size(900, 700));
-      await windowManager.setMinimumSize(const Size(700, 600));
-      await windowManager.center();
-      await windowManager.setTitle('UltraWhisper Settings');
-      
-      // Remove frameless and add title bar
-      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
-      await windowManager.setBackgroundColor(const Color(0xFF1A1A1A));
-      
-      // Set window controls
-      await windowManager.setResizable(true);
-      await windowManager.setAlwaysOnTop(false);
-      
-      // Disable acrylic effects for settings
-      await Window.setEffect(
-        effect: WindowEffect.disabled,
-        color: const Color(0xFF1A1A1A),
-      );
-    } catch (e) {
-      debugPrint('Error configuring settings window: $e');
-    }
-  }
+  /// Handle method calls from other windows (e.g., settings window)
+  Future<dynamic> _handleMethodCall(
+      MethodCall call, int fromWindowId) async {
+    debugPrint('Received method call from window $fromWindowId: ${call.method}');
 
-  Future<void> _configureForOverlayWindow() async {
-    try {
-      final settings = _appService.settings;
-      
-      // Restore original overlay window configuration  
-      await windowManager.setSize(Size(settings.overlayWidth, settings.overlayHeight));
-      await windowManager.setPosition(const Offset(1000, 40)); // Hardcoded for now
-      await windowManager.setAlwaysOnTop(settings.alwaysOnTop);
-      await windowManager.setBackgroundColor(Colors.transparent);
-      
-      // Re-enable acrylic effects
-      await Window.setEffect(
-        effect: _getWindowEffect(settings.glassEffect),
-        color: Colors.black.withValues(alpha: settings.glassOpacity),
-      );
-    } catch (e) {
-      debugPrint('Error configuring overlay window: $e');
+    switch (call.method) {
+      case 'settings_window_closed':
+        // Settings window notifies that it's closing
+        // Close it from the main window and update state
+        await _appService.settingsWindowService.closeSettingsWindow();
+        return true;
+
+      default:
+        debugPrint('Unknown method call: ${call.method}');
+        return null;
     }
   }
 

@@ -10,19 +10,12 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   defaultAction:
       $enumDecodeNullable(_$PasteActionEnumMap, json['defaultAction']) ??
       PasteAction.paste,
-  aiHandoffEnabled: json['aiHandoffEnabled'] as bool? ?? false,
-  aiHandoffSequence:
-      (json['aiHandoffSequence'] as List<dynamic>?)
-          ?.map((e) => e as String)
-          .toList() ??
-      const ['⌥Space', '⌘N', '⌃V', 'Enter'],
-  aiHandoffDelay: (json['aiHandoffDelay'] as num?)?.toInt() ?? 100,
   inputDevice: json['inputDevice'] as String? ?? 'default',
   sampleRate: (json['sampleRate'] as num?)?.toInt() ?? 16000,
   chunkSizeMs: (json['chunkSizeMs'] as num?)?.toInt() ?? 30,
   model:
       $enumDecodeNullable(_$WhisperModelEnumMap, json['model']) ??
-      WhisperModel.largeV3,
+      WhisperModel.largeV3Turbo,
   device:
       $enumDecodeNullable(_$ComputeDeviceEnumMap, json['device']) ??
       ComputeDevice.auto,
@@ -36,18 +29,12 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
       Language.english,
   holdToTalkHotkey: json['holdToTalkHotkey'] as String? ?? 'Right ⌥',
   toggleRecordHotkey: json['toggleRecordHotkey'] as String? ?? '⌥⇧R',
-  partialTextPeekHotkey: json['partialTextPeekHotkey'] as String? ?? '',
-  partialTextToggleHotkey: json['partialTextToggleHotkey'] as String? ?? '',
-  aiHandoffTriggerHotkey: json['aiHandoffTriggerHotkey'] as String? ?? '',
   loggingLevel: json['loggingLevel'] as String? ?? 'INFO',
   smartCapitalization: json['smartCapitalization'] as bool? ?? true,
   punctuation: json['punctuation'] as bool? ?? true,
   disfluencyCleanup: json['disfluencyCleanup'] as bool? ?? true,
-  pasteWithEnter: json['pasteWithEnter'] as bool? ?? false,
-  overlayVisible: json['overlayVisible'] as bool? ?? true,
   overlayWidth: (json['overlayWidth'] as num?)?.toDouble() ?? 360.0,
   overlayHeight: (json['overlayHeight'] as num?)?.toDouble() ?? 100.0,
-  overlayOpacity: (json['overlayOpacity'] as num?)?.toDouble() ?? 0.7,
   glassBlurRadius: (json['glassBlurRadius'] as num?)?.toDouble() ?? 20.0,
   glassOpacity: (json['glassOpacity'] as num?)?.toDouble() ?? 0.05,
   glassEffect: json['glassEffect'] as String? ?? 'hudWindow',
@@ -59,9 +46,6 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
 
 Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'defaultAction': _$PasteActionEnumMap[instance.defaultAction]!,
-  'aiHandoffEnabled': instance.aiHandoffEnabled,
-  'aiHandoffSequence': instance.aiHandoffSequence,
-  'aiHandoffDelay': instance.aiHandoffDelay,
   'inputDevice': instance.inputDevice,
   'sampleRate': instance.sampleRate,
   'chunkSizeMs': instance.chunkSizeMs,
@@ -73,18 +57,12 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'manualLanguage': _$LanguageEnumMap[instance.manualLanguage]!,
   'holdToTalkHotkey': instance.holdToTalkHotkey,
   'toggleRecordHotkey': instance.toggleRecordHotkey,
-  'partialTextPeekHotkey': instance.partialTextPeekHotkey,
-  'partialTextToggleHotkey': instance.partialTextToggleHotkey,
-  'aiHandoffTriggerHotkey': instance.aiHandoffTriggerHotkey,
   'loggingLevel': instance.loggingLevel,
   'smartCapitalization': instance.smartCapitalization,
   'punctuation': instance.punctuation,
   'disfluencyCleanup': instance.disfluencyCleanup,
-  'pasteWithEnter': instance.pasteWithEnter,
-  'overlayVisible': instance.overlayVisible,
   'overlayWidth': instance.overlayWidth,
   'overlayHeight': instance.overlayHeight,
-  'overlayOpacity': instance.overlayOpacity,
   'glassBlurRadius': instance.glassBlurRadius,
   'glassOpacity': instance.glassOpacity,
   'glassEffect': instance.glassEffect,
@@ -104,7 +82,7 @@ const _$WhisperModelEnumMap = {
   WhisperModel.medium: 'medium',
   WhisperModel.large: 'large',
   WhisperModel.largeV3: 'largeV3',
-  // WhisperModel.largeV3Turbo: 'largeV3Turbo',
+  WhisperModel.largeV3Turbo: 'largeV3Turbo',
 };
 
 const _$ComputeDeviceEnumMap = {

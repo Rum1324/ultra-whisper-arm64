@@ -20,7 +20,7 @@
 	<true/>
 	<key>com.apple.security.temporary-exception.files.absolute-path.read-write</key>
 	<array>
-		<string>/Users/sakot/Documents/Flutter/super_whisper_local_v3/backend/</string>
+		<string>/Users/sakot/Documents/Flutter/UltraWhisper/backend/</string>
 		<string>/Users/sakot/.pyenv/</string>
 		<string>/usr/bin/python3</string>
 		<string>/usr/local/bin/python3</string>

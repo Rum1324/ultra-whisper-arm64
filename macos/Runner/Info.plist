@@ -29,11 +29,11 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>GlassyWhisper needs microphone access to record and transcribe audio.</string>
+	<string>UltraWhisper needs microphone access to record and transcribe audio.</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>GlassyWhisper needs permission to send keystrokes to automatically paste transcribed text into other applications.</string>
+	<string>UltraWhisper needs permission to send keystrokes to automatically paste transcribed text into other applications.</string>
 	<key>NSAccessibilityUsageDescription</key>
-	<string>GlassyWhisper needs accessibility access to send synthetic keystrokes for automatic pasting of transcribed text.</string>
+	<string>UltraWhisper needs accessibility access to send synthetic keystrokes for automatic pasting of transcribed text.</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

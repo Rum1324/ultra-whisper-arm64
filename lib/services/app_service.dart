@@ -17,8 +17,8 @@ import 'settings_service.dart';
 import 'backend_service.dart';
 import 'hotkey_service.dart';
 import 'paste_service.dart';
-import 'settings_window_service.dart';
 import 'audio_cue_service.dart';
+import 'settings_window_service.dart';
 
 class AppService extends ChangeNotifier {
   final AudioService _audioService;
@@ -27,6 +27,7 @@ class AppService extends ChangeNotifier {
   final HotkeyService _hotkeyService;
   final PasteService _pasteService;
   final AudioCueService _audioCueService;
+  final SettingsWindowService _settingsWindowService;
 
   final _uuid = const Uuid();
 
@@ -40,6 +41,7 @@ class AppService extends ChangeNotifier {
 
   AppState get state => _state;
   Settings get settings => _settings;
+  SettingsWindowService get settingsWindowService => _settingsWindowService;
 
   AppService({
     required AudioService audioService,
@@ -48,12 +50,14 @@ class AppService extends ChangeNotifier {
     required HotkeyService hotkeyService,
     required PasteService pasteService,
     required AudioCueService audioCueService,
+    required SettingsWindowService settingsWindowService,
   }) : _audioService = audioService,
        _settingsService = settingsService,
        _backendService = backendService,
        _hotkeyService = hotkeyService,
        _pasteService = pasteService,
-       _audioCueService = audioCueService;
+       _audioCueService = audioCueService,
+       _settingsWindowService = settingsWindowService;
 
   Future<void> initialize() async {
     AppLogger.info('Starting AppService initialization...');
@@ -350,15 +354,16 @@ class AppService extends ChangeNotifier {
       AppLogger.debug('Generated session ID: $_currentSessionId');
 
       // Send start session command to backend
+      final languageCode = _getLanguageCode(_settings.autoDetectLanguage, _settings.manualLanguage);
+      AppLogger.info('🌐 Language setting: autoDetect=${_settings.autoDetectLanguage}, manual=${_settings.manualLanguage.name}, sending: $languageCode');
+
       final startCommand = StartSessionCommand(
         sessionId: _currentSessionId!,
         model: _settings.model.name,
         device: _settings.device.name,
         computeType: _settings.computeType.name,
         enablePartial: true,
-        language: _settings.autoDetectLanguage
-            ? null
-            : _settings.manualLanguage.name,
+        language: languageCode,
         post: PostProcessingOptions(
           smartCaps: _settings.smartCapitalization,
           punctuation: _settings.punctuation,
@@ -570,7 +575,7 @@ class AppService extends ChangeNotifier {
       ),
     );
 
-    debugPrint('Final transcription: $text');
+    AppLogger.info('✅ Final transcription: $text');
 
     // Send window to back before pasting if we brought it to front
     if (_settings.bringToFrontDuringRecording) {
@@ -580,11 +585,6 @@ class AppService extends ChangeNotifier {
     // Perform paste action
     try {
       await _pasteService.performPasteAction(text, _settings.defaultAction);
-
-      // AI Handoff if enabled
-      if (_settings.aiHandoffEnabled) {
-        await _performAiHandoff();
-      }
     } catch (e) {
       debugPrint('Failed to perform paste action: $e');
     }
@@ -603,24 +603,6 @@ class AppService extends ChangeNotifier {
     _currentSessionId = null;
     _recordingTimer?.cancel();
     _audioStreamSubscription?.cancel();
-  }
-
-  Future<void> _performAiHandoff() async {
-    try {
-      debugPrint('Performing AI handoff sequence...');
-      for (int i = 0; i < _settings.aiHandoffSequence.length; i++) {
-        final keystroke = _settings.aiHandoffSequence[i];
-        await _pasteService.sendKeystroke(keystroke);
-
-        if (i < _settings.aiHandoffSequence.length - 1) {
-          await Future.delayed(
-            Duration(milliseconds: _settings.aiHandoffDelay),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint('AI handoff failed: $e');
-    }
   }
 
   void toggleOverlayVisibility() {
@@ -717,6 +699,23 @@ class AppService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Convert Flutter language settings to whisper.cpp language code
+  String _getLanguageCode(bool autoDetect, Language manualLanguage) {
+    if (autoDetect) {
+      return 'auto';
+    }
+
+    // Convert Language enum to whisper.cpp language codes
+    switch (manualLanguage) {
+      case Language.auto:
+        return 'auto';
+      case Language.english:
+        return 'en';
+      case Language.japanese:
+        return 'ja';
+    }
+  }
+
   Future<void> cleanup() async {
     AppLogger.info('Cleaning up AppService...');
     _recordingTimer?.cancel();
@@ -735,16 +734,12 @@ class AppService extends ChangeNotifier {
 
   Future<void> openSettingsWindow() async {
     AppLogger.info('Opening settings window');
-    
-    await SettingsWindowService.instance.openSettingsWindow(this);
-    _updateState(_state.copyWith(isSettingsWindowOpen: true));
+    await _settingsWindowService.openSettingsWindow();
   }
 
   Future<void> closeSettingsWindow() async {
     AppLogger.info('Closing settings window');
-    
-    await SettingsWindowService.instance.closeSettingsWindow();
-    _updateState(_state.copyWith(isSettingsWindowOpen: false));
+    await _settingsWindowService.closeSettingsWindow();
   }
 
   @override
@@ -761,6 +756,7 @@ class AppService extends ChangeNotifier {
     _audioService.dispose();
     _hotkeyService.dispose();
     _audioCueService.dispose();
+    _settingsWindowService.dispose();
 
     super.dispose();
   }
