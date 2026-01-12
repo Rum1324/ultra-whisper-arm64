@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,35 @@ class AppService extends ChangeNotifier {
         }
       }
 
+      // Check accessibility permissions for paste functionality
+      AppLogger.debug('Checking accessibility permissions...');
+      try {
+        final hasAccessibility = await _pasteService.hasAccessibilityPermission();
+        if (!hasAccessibility) {
+          AppLogger.warning('⚠️ Accessibility permission not granted');
+          AppLogger.warning('Paste functionality will not work without accessibility permission');
+          AppLogger.warning('Please grant access in System Settings > Privacy & Security > Accessibility');
+          debugPrint('');
+          debugPrint('========================================');
+          debugPrint('⚠️  ACCESSIBILITY PERMISSION REQUIRED  ⚠️');
+          debugPrint('========================================');
+          debugPrint('Automatic paste will not work without accessibility permission.');
+          debugPrint('Please grant access in:');
+          debugPrint('System Settings > Privacy & Security > Accessibility > UltraWhisper');
+          debugPrint('The app can still copy text to clipboard.');
+          debugPrint('========================================');
+          debugPrint('');
+
+          // Note: We don't return here since the app can still function for clipboard-only mode
+          // Just warn the user that paste won't work
+        } else {
+          AppLogger.success('✅ Accessibility permission granted');
+          debugPrint('✅ Accessibility permission is granted - paste functionality will work');
+        }
+      } catch (e) {
+        AppLogger.warning('Could not check accessibility permission: $e');
+      }
+
       // Initialize hotkey service first
       AppLogger.debug('Initializing hotkey service...');
       await _hotkeyService.initialize();
@@ -128,6 +158,10 @@ class AppService extends ChangeNotifier {
       // Set up status bar event handlers
       AppLogger.debug('Setting up status bar event handlers...');
       _setupStatusBarHandlers();
+
+      // Update status bar menu with current volume duck state
+      AppLogger.debug('Updating status bar volume duck state...');
+      await _statusBarService.setVolumeDuckState(_settings.duckVolumeDuringRecording);
 
       _updateState(_state.copyWith(recordingState: RecordingState.idle));
 
@@ -344,11 +378,53 @@ class AppService extends ChangeNotifier {
       AppLogger.warning('No toggle recording hotkey configured');
     }
 
+    // Register Japanese hold-to-talk hotkey
+    if (_settings.holdToTalkJapaneseHotkey.isNotEmpty) {
+      AppLogger.hotkey(
+        'Registering Japanese hold-to-talk hotkey: ${_settings.holdToTalkJapaneseHotkey}',
+      );
+      try {
+        await _hotkeyService.registerHotkey(
+          _settings.holdToTalkJapaneseHotkey,
+          onPressed: () {
+            AppLogger.hotkey('Japanese hold-to-talk hotkey PRESSED');
+            startRecordingJapanese();
+          },
+          onReleased: () {
+            AppLogger.hotkey('Japanese hold-to-talk hotkey RELEASED');
+            stopRecording();
+          },
+        );
+        AppLogger.success('Japanese hold-to-talk hotkey registered successfully');
+      } catch (e) {
+        AppLogger.error('Failed to register Japanese hold-to-talk hotkey', e);
+      }
+    }
+
+    // Register Japanese toggle recording hotkey
+    if (_settings.toggleRecordJapaneseHotkey.isNotEmpty) {
+      AppLogger.hotkey(
+        'Registering Japanese toggle recording hotkey: ${_settings.toggleRecordJapaneseHotkey}',
+      );
+      try {
+        await _hotkeyService.registerHotkey(
+          _settings.toggleRecordJapaneseHotkey,
+          onPressed: () {
+            AppLogger.hotkey('Japanese toggle recording hotkey PRESSED');
+            toggleRecordingJapanese();
+          },
+        );
+        AppLogger.success('Japanese toggle recording hotkey registered successfully');
+      } catch (e) {
+        AppLogger.error('Failed to register Japanese toggle recording hotkey', e);
+      }
+    }
+
     AppLogger.success('Hotkey setup completed');
   }
 
-  Future<void> startRecording() async {
-    AppLogger.audio('startRecording() called');
+  Future<void> startRecording({String? forceLanguage}) async {
+    AppLogger.audio('startRecording() called with forceLanguage: $forceLanguage');
     AppLogger.debug('Current recording state: ${_state.recordingState}');
 
     if (_state.recordingState != RecordingState.idle) {
@@ -377,13 +453,19 @@ class AppService extends ChangeNotifier {
 
       // Play audio cue to indicate recording start
       await _audioCueService.playRecordingStartCue();
-      
+
       _currentSessionId = _uuid.v4();
       AppLogger.debug('Generated session ID: $_currentSessionId');
 
       // Send start session command to backend
-      final languageCode = _getLanguageCode(_settings.autoDetectLanguage, _settings.manualLanguage);
-      AppLogger.info('🌐 Language setting: autoDetect=${_settings.autoDetectLanguage}, manual=${_settings.manualLanguage.name}, sending: $languageCode');
+      final String languageCode;
+      if (forceLanguage != null) {
+        languageCode = forceLanguage;
+        AppLogger.info('🌐 Using forced language: $forceLanguage');
+      } else {
+        languageCode = _getLanguageCode(_settings.autoDetectLanguage, _settings.manualLanguage);
+        AppLogger.info('🌐 Language setting: autoDetect=${_settings.autoDetectLanguage}, manual=${_settings.manualLanguage.name}, sending: $languageCode');
+      }
 
       final startCommand = StartSessionCommand(
         sessionId: _currentSessionId!,
@@ -614,7 +696,38 @@ class AppService extends ChangeNotifier {
     }
   }
 
+  // Japanese-specific recording methods
+  Future<void> startRecordingJapanese() async {
+    AppLogger.audio('startRecordingJapanese() called');
+    await startRecording(forceLanguage: 'ja');
+  }
+
+  Future<void> toggleRecordingJapanese() async {
+    AppLogger.audio('toggleRecordingJapanese() called');
+    AppLogger.debug('Current state: ${_state.recordingState}');
+
+    if (_state.recordingState == RecordingState.idle) {
+      AppLogger.info('Toggling from idle to recording (Japanese)');
+      await startRecording(forceLanguage: 'ja');
+    } else if (_state.recordingState == RecordingState.recording) {
+      AppLogger.info('Toggling from recording to stop');
+      await stopRecording();
+    } else {
+      AppLogger.warning(
+        'Cannot toggle recording in current state: ${_state.recordingState}',
+      );
+    }
+  }
+
   void _handleFinalTranscription(String text) async {
+    debugPrint('');
+    debugPrint('════════════════════════════════════════');
+    debugPrint('🎤 FINAL TRANSCRIPTION RECEIVED');
+    debugPrint('Text: "$text"');
+    debugPrint('Length: ${text.length} characters');
+    debugPrint('Default action: ${_settings.defaultAction}');
+    debugPrint('════════════════════════════════════════');
+
     _updateState(
       _state.copyWith(
         recordingState: RecordingState.idle,
@@ -638,9 +751,12 @@ class AppService extends ChangeNotifier {
 
     // Perform paste action
     try {
+      debugPrint('Attempting to perform paste action...');
       await _pasteService.performPasteAction(text, _settings.defaultAction);
+      debugPrint('Paste action completed successfully');
     } catch (e) {
-      debugPrint('Failed to perform paste action: $e');
+      debugPrint('❌ Failed to perform paste action: $e');
+      AppLogger.error('Paste action failed: $e');
     }
 
     _currentSessionId = null;
@@ -694,7 +810,7 @@ class AppService extends ChangeNotifier {
     }
   }
 
-  void updateSettings(Settings newSettings) async {
+  Future<void> updateSettings(Settings newSettings) async {
     final oldSettings = _settings;
     _settings = newSettings;
     await _settingsService.saveSettings(newSettings);
@@ -715,6 +831,11 @@ class AppService extends ChangeNotifier {
     // Update Dock visibility if it changed
     if (oldSettings.dockVisibilityMode != newSettings.dockVisibilityMode) {
       await _applyDockVisibility(newSettings.dockVisibilityMode);
+    }
+
+    // Update status bar menu checkmark if volume duck setting changed
+    if (oldSettings.duckVolumeDuringRecording != newSettings.duckVolumeDuringRecording) {
+      await _statusBarService.setVolumeDuckState(newSettings.duckVolumeDuringRecording);
     }
 
     notifyListeners();
@@ -824,8 +945,19 @@ class AppService extends ChangeNotifier {
     _statusBarService.onQuit = () async {
       AppLogger.info('Status bar: Quit requested');
       await cleanup();
-      // Platform-specific quit
+      // Give a brief moment for cleanup to complete
       await Future.delayed(const Duration(milliseconds: 100));
+      // Exit the application
+      exit(0);
+    };
+
+    _statusBarService.onToggleVolumeDuck = () async {
+      AppLogger.info('Status bar: Volume duck toggle requested');
+      // Toggle the setting
+      final newValue = !_settings.duckVolumeDuringRecording;
+      final newSettings = _settings.copyWith(duckVolumeDuringRecording: newValue);
+      await updateSettings(newSettings);
+      AppLogger.info('Volume duck toggled to: $newValue');
     };
 
     AppLogger.success('Status bar event handlers configured');

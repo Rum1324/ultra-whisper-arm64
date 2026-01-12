@@ -5,7 +5,9 @@ class StatusBarController {
     private var statusItem: NSStatusItem?
     private var menu: NSMenu?
     private var recordingMenuItem: NSMenuItem?
+    private var volumeDuckMenuItem: NSMenuItem?
     private var isRecording = false
+    private var volumeDuckEnabled = true  // Default to true
 
     // Callback for menu actions
     var onStartRecording: (() -> Void)?
@@ -14,6 +16,7 @@ class StatusBarController {
     var onRestart: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
     var onQuit: (() -> Void)?
+    var onToggleVolumeDuck: (() -> Void)?
 
     init() {
         setupStatusBar()
@@ -55,6 +58,18 @@ class StatusBarController {
         )
         recordingMenuItem?.target = self
         menu?.addItem(recordingMenuItem!)
+
+        menu?.addItem(NSMenuItem.separator())
+
+        // Volume ducking toggle menu item
+        volumeDuckMenuItem = NSMenuItem(
+            title: "Reduce System Volume During Recording",
+            action: #selector(toggleVolumeDuck),
+            keyEquivalent: ""
+        )
+        volumeDuckMenuItem?.target = self
+        volumeDuckMenuItem?.state = .on  // Default to on (checkmark visible)
+        menu?.addItem(volumeDuckMenuItem!)
 
         menu?.addItem(NSMenuItem.separator())
 
@@ -147,6 +162,19 @@ class StatusBarController {
         NSLog("StatusBarController: Status bar hidden")
     }
 
+    func setVolumeDuckState(_ enabled: Bool) {
+        volumeDuckEnabled = enabled
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            // Update checkmark state
+            self.volumeDuckMenuItem?.state = enabled ? .on : .off
+
+            NSLog("StatusBarController: Volume duck state updated to \(enabled)")
+        }
+    }
+
     // MARK: - Menu Actions
 
     @objc private func toggleRecording() {
@@ -156,6 +184,11 @@ class StatusBarController {
         } else {
             onStartRecording?()
         }
+    }
+
+    @objc private func toggleVolumeDuck() {
+        NSLog("StatusBarController: Volume duck toggle clicked")
+        onToggleVolumeDuck?()
     }
 
     @objc private func openSettings() {
@@ -212,6 +245,19 @@ extension StatusBarController {
 
         case "hideStatusBar":
             controller.hideStatusBar()
+            result(nil)
+
+        case "setVolumeDuckState":
+            guard let args = call.arguments as? [String: Any],
+                  let enabled = args["enabled"] as? Bool else {
+                result(FlutterError(
+                    code: "INVALID_ARGUMENTS",
+                    message: "Missing enabled argument",
+                    details: nil
+                ))
+                return
+            }
+            controller.setVolumeDuckState(enabled)
             result(nil)
 
         default:

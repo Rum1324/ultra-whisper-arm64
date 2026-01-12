@@ -31,21 +31,26 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
       // Request settings from main window instead of using platform channels
       final settingsJson = await DesktopMultiWindow.invokeMethod(0, 'get_settings');
       debugPrint('Received settings from main window: $settingsJson');
+      debugPrint('Settings type: ${settingsJson.runtimeType}');
 
-      if (settingsJson != null && settingsJson is Map<String, dynamic>) {
+      if (settingsJson != null && settingsJson is Map) {
+        // Convert from Map<Object?, Object?> to Map<String, dynamic>
+        final convertedSettings = Map<String, dynamic>.from(settingsJson);
         setState(() {
-          _settings = Settings.fromJson(settingsJson);
+          _settings = Settings.fromJson(convertedSettings);
           _isLoading = false;
         });
       } else {
         // Fallback to default settings
+        debugPrint('Settings is null or not a Map, using defaults');
         setState(() {
           _settings = const Settings();
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('Error loading settings: $e');
+      debugPrint('Stack trace: $stackTrace');
       setState(() {
         _settings = const Settings();
         _isLoading = false;

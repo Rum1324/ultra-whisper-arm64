@@ -28,17 +28,30 @@ class PasteService {
   
   Future<void> _pasteWithClipboardPreservation(String text, bool pressEnter) async {
     try {
+      debugPrint('');
+      debugPrint('=== PASTE OPERATION STARTING ===');
+      debugPrint('Text to paste: "$text"');
+      debugPrint('Press Enter after: $pressEnter');
+
       // 1. Read current clipboard contents
       final originalClipboard = await _getClipboardData();
-      debugPrint('Original clipboard: ${originalClipboard?.text}');
-      
+      debugPrint('✅ Step 1: Read original clipboard: "${originalClipboard?.text}"');
+
       // 2. Set transcript to clipboard
       await _copyToClipboard(text);
-      debugPrint('Copied transcription to clipboard: $text');
-      
+      debugPrint('✅ Step 2: Copied transcription to clipboard');
+
+      // Verify clipboard was actually set
+      final verifyClipboard = await _getClipboardData();
+      if (verifyClipboard?.text == text) {
+        debugPrint('✅ Step 2b: Verified clipboard contains our text');
+      } else {
+        debugPrint('❌ Step 2b: Clipboard verification failed! Expected: "$text", Got: "${verifyClipboard?.text}"');
+      }
+
       // 3. Check accessibility permissions first
       final hasPermission = await hasAccessibilityPermission();
-      debugPrint('Accessibility permission status: $hasPermission');
+      debugPrint('🔑 Step 3: Accessibility permission status: $hasPermission');
       
       if (!hasPermission) {
         debugPrint('Accessibility permission not granted - requesting permission');
@@ -52,24 +65,29 @@ class PasteService {
       
       // 4. Attempt to send keystrokes via platform channel
       try {
-        debugPrint('Attempting to send Cmd+V keystroke...');
+        debugPrint('🎯 Step 4: Attempting to send Cmd+V keystroke...');
         await _keystrokeService.sendKeystroke('cmd+v');
-        debugPrint('Successfully sent Cmd+V keystroke');
-        
+        debugPrint('✅ Step 4: Successfully sent Cmd+V keystroke');
+
         // 5. Optionally press Enter
         if (pressEnter) {
-          await Future.delayed(const Duration(milliseconds: 100)); // Longer delay for production
-          debugPrint('Attempting to send Enter keystroke...');
+          await Future.delayed(const Duration(milliseconds: 100));
+          debugPrint('🎯 Step 5: Attempting to send Enter keystroke...');
           await _keystrokeService.sendKeystroke('enter');
-          debugPrint('Successfully sent Enter keystroke');
+          debugPrint('✅ Step 5: Successfully sent Enter keystroke');
         }
-        
+
         // 6. Restore clipboard with proper ordering after successful paste
+        debugPrint('⏱️ Step 6: Scheduling clipboard restore in 500ms');
         _scheduleClipboardRestoreWithOrdering(text, originalClipboard);
-        
+        debugPrint('=== PASTE OPERATION COMPLETED SUCCESSFULLY ===');
+        debugPrint('');
+
       } catch (e) {
-        debugPrint('Warning: Could not send keystrokes via platform channel: $e');
-        debugPrint('Error details: ${e.toString()}');
+        debugPrint('❌ Step 4: FAILED to send keystrokes via platform channel');
+        debugPrint('Error: $e');
+        debugPrint('Error type: ${e.runtimeType}');
+        debugPrint('Stack trace: ${StackTrace.current}');
         
         // Check if it's a permission issue
         if (e.toString().contains('Accessibility permission required')) {
@@ -135,35 +153,13 @@ class PasteService {
     await _keystrokeService.sendKeySequence(keystrokes, delayMs: delayMs);
   }
   
-  void _scheduleClipboardRestore(ClipboardData? originalClipboard) {
-    // Restore clipboard after 3 seconds to give user time to paste
-    Timer(const Duration(seconds: 3), () async {
-      await _restoreClipboardData(originalClipboard);
-      debugPrint('Clipboard restored after delay');
-    });
-  }
-  
   void _scheduleClipboardRestoreWithOrdering(String transcribedText, ClipboardData? originalClipboard) {
-    // Schedule clipboard restoration with proper ordering:
-    // 1. Keep transcribed text accessible for first few seconds
-    // 2. Then restore original clipboard as most recent item
-    // This allows user to paste transcribed text again within the window
-    
+    // Simple clipboard restoration after paste completes
     Timer(const Duration(milliseconds: 500), () async {
-      // First, restore original clipboard as most recent
+      // Simply restore the original clipboard content
       if (originalClipboard != null && originalClipboard.text != null && originalClipboard.text!.isNotEmpty) {
         await _restoreClipboardData(originalClipboard);
-        debugPrint('Restored original clipboard as most recent: ${originalClipboard.text}');
-        
-        // Then immediately put transcribed text back to maintain it in history
-        await Future.delayed(const Duration(milliseconds: 50));
-        await _copyToClipboard(transcribedText);
-        debugPrint('Restored transcribed text to clipboard history');
-        
-        // Finally, restore original clipboard again to make it the most recent
-        await Future.delayed(const Duration(milliseconds: 50));
-        await _restoreClipboardData(originalClipboard);
-        debugPrint('Final restoration - original clipboard is now most recent');
+        debugPrint('Restored original clipboard: ${originalClipboard.text}');
       }
     });
   }

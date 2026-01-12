@@ -75,11 +75,14 @@ class KeystrokeHandler {
     static func performKeystroke(keystroke: String) throws {
         // Check if we have accessibility permissions with detailed logging
         let hasPermission = AXIsProcessTrusted()
-        NSLog("KeystrokeHandler: Accessibility permission status: \(hasPermission)")
-        
+        NSLog("🔑 KeystrokeHandler: Accessibility permission status: \(hasPermission)")
+        NSLog("🔑 KeystrokeHandler: Attempting keystroke: '\(keystroke)'")
+
         guard hasPermission else {
-            NSLog("KeystrokeHandler: Accessibility permission required for keystroke: \(keystroke)")
-            throw NSError(domain: "KeystrokeHandler", code: 1, userInfo: [NSLocalizedDescriptionKey: "Accessibility permission required. Please grant access in System Preferences > Privacy & Security > Accessibility"])
+            NSLog("❌ KeystrokeHandler: Accessibility permission denied for keystroke: \(keystroke)")
+            let errorMsg = "Accessibility permission required. Please grant access in System Settings > Privacy & Security > Accessibility and add UltraWhisper"
+            NSLog("❌ Error detail: \(errorMsg)")
+            throw NSError(domain: "KeystrokeHandler", code: 1, userInfo: [NSLocalizedDescriptionKey: errorMsg])
         }
         
         let components = keystroke.lowercased().split(separator: "+")
@@ -107,39 +110,43 @@ class KeystrokeHandler {
             }
         }
         
-        NSLog("KeystrokeHandler: Attempting to send keystroke: \(keystroke) with keyCode: \(keyCode), flags: \(flags.rawValue)")
-        
+        NSLog("🔑 KeystrokeHandler: Prepared keystroke with keyCode: \(keyCode), flags: \(flags.rawValue)")
+
         // Create event source for more reliable event posting in production
-        let eventSource = CGEventSource(stateID: .hidSystemState)
-        
+        guard let eventSource = CGEventSource(stateID: .hidSystemState) else {
+            NSLog("❌ KeystrokeHandler: Failed to create event source")
+            throw NSError(domain: "KeystrokeHandler", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to create event source - system may be blocking input events"])
+        }
+        NSLog("✅ KeystrokeHandler: Created event source")
+
         // Create and post the key down event
         guard let keyDownEvent = CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: true) else {
-            NSLog("KeystrokeHandler: Failed to create key down event for keyCode: \(keyCode)")
+            NSLog("❌ KeystrokeHandler: Failed to create key down event for keyCode: \(keyCode)")
             throw NSError(domain: "KeystrokeHandler", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to create key down event for key: \(keystroke)"])
         }
-        
+
         keyDownEvent.flags = flags
-        
+
         // Post the key down event (single posting to avoid duplicates)
         keyDownEvent.post(tap: .cghidEventTap)
-        
-        NSLog("KeystrokeHandler: Posted key down event")
+
+        NSLog("✅ KeystrokeHandler: Posted key down event")
         
         // Small delay between key down and key up
         usleep(15000) // 15ms for better reliability
         
         // Create and post the key up event
         guard let keyUpEvent = CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: false) else {
-            NSLog("KeystrokeHandler: Failed to create key up event for keyCode: \(keyCode)")
+            NSLog("❌ KeystrokeHandler: Failed to create key up event for keyCode: \(keyCode)")
             throw NSError(domain: "KeystrokeHandler", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create key up event for key: \(keystroke)"])
         }
-        
+
         keyUpEvent.flags = flags
-        
+
         // Post the key up event (single posting to avoid duplicates)
         keyUpEvent.post(tap: .cghidEventTap)
-        
-        NSLog("KeystrokeHandler: Posted key up event")
+
+        NSLog("✅ KeystrokeHandler: Successfully sent keystroke: \(keystroke)")
     }
     
     static func getKeyCode(for key: String) throws -> CGKeyCode {

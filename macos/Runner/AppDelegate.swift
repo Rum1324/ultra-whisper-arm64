@@ -91,6 +91,10 @@ class AppDelegate: FlutterAppDelegate {
       self?.statusBarEventChannel?.invokeMethod("quit", arguments: nil)
     }
 
+    statusBarController?.onToggleVolumeDuck = { [weak self] in
+      self?.statusBarEventChannel?.invokeMethod("toggleVolumeDuck", arguments: nil)
+    }
+
     NSLog("AppDelegate: Status bar setup completed")
   }
 

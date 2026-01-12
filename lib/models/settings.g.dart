@@ -32,6 +32,9 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
       Language.english,
   holdToTalkHotkey: json['holdToTalkHotkey'] as String? ?? 'Right ⌥',
   toggleRecordHotkey: json['toggleRecordHotkey'] as String? ?? '⌥⇧R',
+  holdToTalkJapaneseHotkey: json['holdToTalkJapaneseHotkey'] as String? ?? '⌥T',
+  toggleRecordJapaneseHotkey:
+      json['toggleRecordJapaneseHotkey'] as String? ?? '⌥⇧T',
   loggingLevel: json['loggingLevel'] as String? ?? 'INFO',
   smartCapitalization: json['smartCapitalization'] as bool? ?? true,
   punctuation: json['punctuation'] as bool? ?? true,
@@ -73,6 +76,8 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'manualLanguage': _$LanguageEnumMap[instance.manualLanguage]!,
   'holdToTalkHotkey': instance.holdToTalkHotkey,
   'toggleRecordHotkey': instance.toggleRecordHotkey,
+  'holdToTalkJapaneseHotkey': instance.holdToTalkJapaneseHotkey,
+  'toggleRecordJapaneseHotkey': instance.toggleRecordJapaneseHotkey,
   'loggingLevel': instance.loggingLevel,
   'smartCapitalization': instance.smartCapitalization,
   'punctuation': instance.punctuation,

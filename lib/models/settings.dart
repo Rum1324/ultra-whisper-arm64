@@ -67,6 +67,8 @@ class Settings {
   // Hotkeys (stored as key combinations)
   final String holdToTalkHotkey;
   final String toggleRecordHotkey;
+  final String holdToTalkJapaneseHotkey;  // New: Japanese-specific hotkey
+  final String toggleRecordJapaneseHotkey;  // New: Japanese-specific hotkey
 
   // Advanced settings
   final String loggingLevel;
@@ -107,6 +109,8 @@ class Settings {
 
     this.holdToTalkHotkey = 'Right ⌥',
     this.toggleRecordHotkey = '⌥⇧R',
+    this.holdToTalkJapaneseHotkey = '⌥T',  // Option+T for Japanese
+    this.toggleRecordJapaneseHotkey = '⌥⇧T',  // Option+Shift+T for Japanese toggle
 
     this.loggingLevel = 'INFO',
     this.smartCapitalization = true,
@@ -144,6 +148,8 @@ class Settings {
     Language? manualLanguage,
     String? holdToTalkHotkey,
     String? toggleRecordHotkey,
+    String? holdToTalkJapaneseHotkey,
+    String? toggleRecordJapaneseHotkey,
     String? loggingLevel,
     bool? smartCapitalization,
     bool? punctuation,
@@ -174,6 +180,8 @@ class Settings {
       manualLanguage: manualLanguage ?? this.manualLanguage,
       holdToTalkHotkey: holdToTalkHotkey ?? this.holdToTalkHotkey,
       toggleRecordHotkey: toggleRecordHotkey ?? this.toggleRecordHotkey,
+      holdToTalkJapaneseHotkey: holdToTalkJapaneseHotkey ?? this.holdToTalkJapaneseHotkey,
+      toggleRecordJapaneseHotkey: toggleRecordJapaneseHotkey ?? this.toggleRecordJapaneseHotkey,
       loggingLevel: loggingLevel ?? this.loggingLevel,
       smartCapitalization: smartCapitalization ?? this.smartCapitalization,
       punctuation: punctuation ?? this.punctuation,

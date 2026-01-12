@@ -12,6 +12,7 @@ class StatusBarService {
   Function()? onRestart;
   Function()? onCheckForUpdates;
   Function()? onQuit;
+  Function()? onToggleVolumeDuck;
 
   StatusBarService() {
     _setupEventChannel();
@@ -56,6 +57,11 @@ class StatusBarService {
         onQuit?.call();
         break;
 
+      case 'toggleVolumeDuck':
+        AppLogger.info('StatusBarService: Volume duck toggle requested from menu bar');
+        onToggleVolumeDuck?.call();
+        break;
+
       default:
         AppLogger.warning('StatusBarService: Unknown event: ${call.method}');
     }
@@ -87,6 +93,17 @@ class StatusBarService {
       AppLogger.debug('StatusBarService: Status bar hidden');
     } catch (e) {
       AppLogger.error('StatusBarService: Failed to hide status bar', e);
+    }
+  }
+
+  Future<void> setVolumeDuckState(bool enabled) async {
+    try {
+      await _statusBarChannel.invokeMethod('setVolumeDuckState', {
+        'enabled': enabled,
+      });
+      AppLogger.debug('StatusBarService: Volume duck state set to $enabled');
+    } catch (e) {
+      AppLogger.error('StatusBarService: Failed to set volume duck state', e);
     }
   }
 }

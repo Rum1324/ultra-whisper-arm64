@@ -158,7 +158,7 @@ class WhisperModel:
             WHISPER_SAMPLING_GREEDY
         )
 
-        # Modify params (we need to access the struct in memory)
+        # Use simple byte offset approach (this works!)
         # The struct starts with strategy, then n_threads at offset 4
         params_bytes = ctypes.cast(params_ptr, ctypes.POINTER(ctypes.c_int))
         params_bytes[1] = n_threads  # n_threads is second field
@@ -171,8 +171,7 @@ class WhisperModel:
         )
         translate_ptr[0] = False
 
-        # Set language if specified
-        # Language field is at offset ~160 bytes (const char *), after all the bools/ints/floats
+        # Set language if specified (simple approach)
         if language and language != 'auto':
             # Map language codes
             lang_map = {
@@ -183,17 +182,23 @@ class WhisperModel:
             }
             lang_code = lang_map.get(language.lower(), language.lower())
 
-            # Create a persistent C string for the language
-            lang_cstr = ctypes.c_char_p(lang_code.encode('utf-8'))
+            # Get language ID using whisper.cpp function
+            lang_id = libwhisper.whisper_lang_id(lang_code.encode('utf-8'))
 
-            # The language field is at byte offset 160 in the struct (on 64-bit systems)
-            # Cast params_ptr to char* then offset to language field position
-            params_as_bytes = ctypes.cast(params_ptr, ctypes.POINTER(ctypes.c_char))
-            lang_field_ptr = ctypes.cast(
-                ctypes.addressof(params_as_bytes.contents) + 160,
-                ctypes.POINTER(ctypes.c_char_p)
+            # Set the language in params using simple offset (language field is at offset 48 in the struct)
+            # This is a simpler approach than the complex one we had before
+            lang_ptr = ctypes.cast(
+                ctypes.addressof(ctypes.cast(params_ptr, ctypes.POINTER(ctypes.c_char)).contents) + 48,
+                ctypes.POINTER(ctypes.c_char)
             )
-            lang_field_ptr[0] = lang_cstr.value
+            # Copy the language code string
+            for i, c in enumerate(lang_code.encode('utf-8')):
+                lang_ptr[i] = c
+            lang_ptr[len(lang_code)] = 0  # Null terminate
+
+            print(f"🎌 Language explicitly set to: {lang_code} (id: {lang_id})")
+        else:
+            print("🌍 Using auto-language detection")
 
         # Create pointer to audio data
         audio_ptr = audio.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
@@ -238,6 +243,10 @@ class WhisperModel:
         lang_id = libwhisper.whisper_full_lang_id(self.ctx)
         lang_str = libwhisper.whisper_lang_str(lang_id)
         detected_language = lang_str.decode('utf-8') if lang_str else 'unknown'
+
+        # Debug output to verify language detection
+        print(f"🔍 Detected language: {detected_language} (lang_id: {lang_id})")
+        print(f"📝 Transcription preview: {full_text[:100] if full_text else '[empty]'}")
 
         return {
             'text': full_text.strip(),

@@ -205,10 +205,11 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
 
       case 'save_settings':
         // Settings window wants to save new settings
-        final settingsJson = call.arguments as Map<String, dynamic>;
+        // Convert from platform channel Map<Object?, Object?> to Map<String, dynamic>
+        final settingsJson = Map<String, dynamic>.from(call.arguments as Map);
         debugPrint('Settings window saving new settings');
         final newSettings = Settings.fromJson(settingsJson);
-        _appService.updateSettings(newSettings);
+        await _appService.updateSettings(newSettings);
         return true;
 
       default:

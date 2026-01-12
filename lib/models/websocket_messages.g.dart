@@ -98,7 +98,9 @@ HelloAckEvent _$HelloAckEventFromJson(Map<String, dynamic> json) =>
       models: (json['models'] as List<dynamic>)
           .map((e) => e as String)
           .toList(),
-      device: json['device'] as String,
+      device: json['device'] as String?,
+      backend: json['backend'] as String?,
+      gpu: json['gpu'] as String?,
     );
 
 Map<String, dynamic> _$HelloAckEventToJson(HelloAckEvent instance) =>
@@ -106,6 +108,8 @@ Map<String, dynamic> _$HelloAckEventToJson(HelloAckEvent instance) =>
       'serverVersion': instance.serverVersion,
       'models': instance.models,
       'device': instance.device,
+      'backend': instance.backend,
+      'gpu': instance.gpu,
     };
 
 PartialEvent _$PartialEventFromJson(Map<String, dynamic> json) => PartialEvent(

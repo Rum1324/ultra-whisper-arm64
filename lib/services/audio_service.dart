@@ -93,7 +93,22 @@ class AudioService {
       _recordingSubscription = stream.listen(
         (data) {
           if (!_audioController.isClosed) {
+            // More detailed logging to debug audio issues
             AppLogger.debug('Received audio data: ${data.length} bytes');
+
+            // Check if audio is silent
+            bool isSilent = true;
+            for (int i = 0; i < data.length && i < 100; i++) {
+              if (data[i] != 0 && data[i] != 128) {  // Check for non-zero/non-center values
+                isSilent = false;
+                break;
+              }
+            }
+
+            if (isSilent && data.length > 100) {
+              AppLogger.warning('Audio chunk appears to be silent!');
+            }
+
             _audioController.add(Uint8List.fromList(data));
           }
         },

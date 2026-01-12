@@ -106,14 +106,18 @@ class CancelCommand {
 class HelloAckEvent {
   final String serverVersion;
   final List<String> models;
-  final String device;
-  
+  final String? device;
+  final String? backend;
+  final String? gpu;
+
   const HelloAckEvent({
     required this.serverVersion,
     required this.models,
-    required this.device,
+    this.device,
+    this.backend,
+    this.gpu,
   });
-  
+
   factory HelloAckEvent.fromJson(Map<String, dynamic> json) => _$HelloAckEventFromJson(json);
   Map<String, dynamic> toJson() => _$HelloAckEventToJson(this);
 }

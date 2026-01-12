@@ -112,10 +112,11 @@ class WhisperCppBackend:
             # Get language from session config, default to 'auto' for auto-detection
             # Handle None/null values by using 'auto'
             language = session.config.get('language') or 'auto'
+            logger.info(f"🌐 Session config language: {session.config.get('language')} → Using: '{language}'")
 
             # Convert 'auto' to None for whisper.cpp (None means auto-detect)
             whisper_language = None if language == 'auto' else language
-            logger.info(f"Using language: {language} (whisper param: {whisper_language})")
+            logger.info(f"📤 Passing to whisper: language='{whisper_language}' (None = auto-detect)")
 
             # Use the in-memory model - MUCH faster!
             result = self.model.transcribe(
@@ -126,15 +127,17 @@ class WhisperCppBackend:
 
             full_text = result['text']
             segments = result['segments']
-            language = result['language']
+            detected_language = result['language']
 
-            logger.info(f"Transcription complete: '{full_text}' (language: {language})")
+            logger.info(f"✅ Transcription complete:")
+            logger.info(f"   🔍 Detected language: {detected_language}")
+            logger.info(f"   📝 Text: '{full_text[:100]}{'...' if len(full_text) > 100 else ''}'")
 
             return {
                 'session_id': session_id,
                 'text': full_text,
                 'segments': segments,
-                'language': language,
+                'language': detected_language,
                 'avg_logprob': 0.0
             }
 
