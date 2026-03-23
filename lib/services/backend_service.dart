@@ -2,15 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
 import '../utils/logger.dart';
 
 class BackendService {
   Process? _backendProcess;
   int? _port;
+  static const int _backendPort = 8082;  // Fixed port for v3
+  static File? _lockFile;
+  static File? _pidFile;
   
   Future<void> initialize() async {
     try {
       AppLogger.info('Initializing backend service...');
+
+      // Clean up any orphaned processes from previous runs
+      await _cleanupOrphanedProcesses();
+
       await _startBackendProcess();
       AppLogger.success('Backend service initialized on port $_port');
     } catch (e) {
@@ -18,14 +26,99 @@ class BackendService {
       throw Exception('Backend initialization failed: $e');
     }
   }
-  
+
+  Future<void> _cleanupOrphanedProcesses() async {
+    try {
+      AppLogger.debug('Checking for orphaned backend processes...');
+
+      // Initialize lock and PID files
+      final tempDir = Directory.systemTemp.path;
+      _lockFile = File(path.join(tempDir, 'ultrawhisper_backend.lock'));
+      _pidFile = File(path.join(tempDir, 'ultrawhisper_backend.pid'));
+
+      // Check if there's a stale lock file from a previous crash
+      if (await _lockFile!.exists()) {
+        AppLogger.warning('Found stale lock file, checking if process is still running...');
+
+        // Try to read PID from file
+        if (await _pidFile!.exists()) {
+          try {
+            final pidStr = await _pidFile!.readAsString();
+            final pid = int.tryParse(pidStr.trim());
+
+            if (pid != null) {
+              // Check if process is still running
+              final result = await Process.run('kill', ['-0', pid.toString()]);
+              if (result.exitCode == 0) {
+                AppLogger.info('Found running backend process with PID $pid, killing it...');
+                await Process.run('kill', ['-9', pid.toString()]);
+                await Future.delayed(const Duration(seconds: 1));
+              }
+            }
+          } catch (e) {
+            AppLogger.debug('Could not read PID file: $e');
+          }
+        }
+
+        // Remove stale lock file
+        await _lockFile!.delete();
+        AppLogger.info('Removed stale lock file');
+      }
+
+      // Check if there's a process using our backend port
+      if (await _isPortInUse(_backendPort)) {
+        AppLogger.warning('Found process using backend port $_backendPort, attempting to clean up...');
+
+        // Try to find and kill Python processes that might be our backend
+        if (Platform.isMacOS) {
+          try {
+            // Find processes using the port
+            final result = await Process.run('lsof', ['-i', ':$_backendPort', '-t']);
+            if (result.exitCode == 0 && result.stdout.toString().trim().isNotEmpty) {
+              final pids = result.stdout.toString().trim().split('\n');
+              for (final pid in pids) {
+                if (pid.trim().isNotEmpty) {
+                  AppLogger.debug('Killing orphaned process with PID: $pid');
+                  await Process.run('kill', ['-9', pid.trim()]);
+                }
+              }
+
+              // Wait a moment for the port to be released
+              await Future.delayed(const Duration(seconds: 1));
+
+              if (!await _isPortInUse(_backendPort)) {
+                AppLogger.success('Successfully cleaned up orphaned backend process');
+              }
+            }
+          } catch (e) {
+            AppLogger.warning('Could not clean up orphaned process: $e');
+          }
+        }
+      }
+
+      // Clean up PID file if it exists
+      if (await _pidFile!.exists()) {
+        await _pidFile!.delete();
+      }
+    } catch (e) {
+      AppLogger.warning('Error during orphaned process cleanup: $e');
+      // Don't fail initialization just because cleanup had issues
+    }
+  }
+
   Future<void> _startBackendProcess() async {
     try {
       // Always try to launch the backend process
-      // Check if backend is already running on port 8082 (v3 uses 8082, v2 uses 8081)
-      if (await _isPortInUse(8082)) {
-        AppLogger.debug('Backend already running on port 8082, using existing instance');
-        _port = 8082;
+      // Check if backend is already running on the configured port
+      if (await _isPortInUse(_backendPort)) {
+        AppLogger.debug('Backend already running on port $_backendPort, using existing instance');
+        _port = _backendPort;
+
+        // Initialize lock files even when reusing existing backend
+        final tempDir = Directory.systemTemp.path;
+        _lockFile = File(path.join(tempDir, 'ultrawhisper_backend.lock'));
+        _pidFile = File(path.join(tempDir, 'ultrawhisper_backend.pid'));
+
         AppLogger.success('Connected to existing backend on port $_port');
         return;
       }
@@ -49,11 +142,11 @@ class BackendService {
       final environment = await _getBackendEnvironment();
       AppLogger.debug('Backend environment: $environment');
 
-      // Start the Python backend process with fixed port 8082 (v3 uses 8082, v2 uses 8081)
+      // Start the Python backend process with configured port
       AppLogger.debug('Starting backend process...');
       _backendProcess = await Process.start(
         pythonPath,
-        [backendPath, '--port', '8082', '--host', '127.0.0.1'],
+        [backendPath, '--port', '$_backendPort', '--host', '127.0.0.1'],
         mode: ProcessStartMode.normal,
         environment: environment,
       );
@@ -64,13 +157,16 @@ class BackendService {
 
       AppLogger.debug('Backend process started, waiting for port...');
 
-      // Wait for the backend to report its port (should be 8082 for v3)
+      // Wait for the backend to report its port
       _port = await _readPortFromBackend();
 
-      if (_port == null || _port != 8082) {
-        throw Exception('Failed to get correct port from backend, expected 8082, got $_port');
+      if (_port == null || _port != _backendPort) {
+        throw Exception('Failed to get correct port from backend, expected $_backendPort, got $_port');
       }
-      
+
+      // Create lock file and store PID
+      await _createLockFiles();
+
       AppLogger.success('Backend started successfully on port $_port');
     } catch (e) {
       AppLogger.error('Error starting backend process', e);
@@ -276,7 +372,49 @@ class BackendService {
     }
   }
   
+  Future<void> _createLockFiles() async {
+    try {
+      if (_backendProcess != null) {
+        // Create lock file
+        if (_lockFile != null) {
+          await _lockFile!.writeAsString('locked');
+          AppLogger.debug('Created lock file: ${_lockFile!.path}');
+        }
+
+        // Store backend process PID
+        if (_pidFile != null && _backendProcess!.pid > 0) {
+          await _pidFile!.writeAsString(_backendProcess!.pid.toString());
+          AppLogger.debug('Created PID file with PID: ${_backendProcess!.pid}');
+        }
+      }
+    } catch (e) {
+      AppLogger.warning('Could not create lock/PID files: $e');
+      // Don't fail if we can't create these files
+    }
+  }
+
+  Future<void> _removeLockFiles() async {
+    try {
+      // Remove lock file
+      if (_lockFile != null && await _lockFile!.exists()) {
+        await _lockFile!.delete();
+        AppLogger.debug('Removed lock file');
+      }
+
+      // Remove PID file
+      if (_pidFile != null && await _pidFile!.exists()) {
+        await _pidFile!.delete();
+        AppLogger.debug('Removed PID file');
+      }
+    } catch (e) {
+      AppLogger.warning('Could not remove lock/PID files: $e');
+    }
+  }
+
   Future<void> _cleanup() async {
+    // Remove lock files on cleanup
+    await _removeLockFiles();
+
     _backendProcess = null;
     _port = null;
   }

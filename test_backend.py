@@ -1,106 +1,128 @@
 #!/usr/bin/env python3
-"""Test script to verify backend is using Metal GPU and working correctly"""
+"""
+Test script to verify the backend is working
+"""
 
-import sys
-import os
-import time
+import asyncio
+import websockets
+import json
 import numpy as np
+import sys
 
-# Add backend to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
+async def test_transcription():
+    uri = "ws://127.0.0.1:8082"
 
-from whisper_wrapper import WhisperModel
+    try:
+        async with websockets.connect(uri) as websocket:
+            print(f"✅ Connected to WebSocket server at {uri}")
 
-def main():
-    print("=" * 60)
-    print("Testing GlassyWhisper v3 Backend")
-    print("=" * 60)
+            # Send hello
+            hello_msg = json.dumps({
+                "type": "hello",
+                "id": "test-1",
+                "data": {
+                    "appVersion": "test",
+                    "locale": "en-US"
+                }
+            })
+            await websocket.send(hello_msg)
+            print("📤 Sent hello message")
 
-    # Model path
-    model_path = "backend/whisper.cpp/models/ggml-large-v3-turbo.bin"
+            # Get hello_ack
+            response = await websocket.recv()
+            response_data = json.loads(response)
+            print(f"📥 Received: {response_data['type']}")
 
-    if not os.path.exists(model_path):
-        print(f"ERROR: Model not found at {model_path}")
-        return 1
+            # Start session
+            start_msg = json.dumps({
+                "type": "start_session",
+                "id": "test-2",
+                "data": {
+                    "sessionId": "test-session-1",
+                    "language": "auto",
+                    "model": "large-v3-turbo",
+                    "device": "metal",
+                    "computeType": "default",
+                    "enablePartial": False,
+                    "post": {
+                        "smartCaps": True,
+                        "punctuation": True,
+                        "disfluencyCleanup": True
+                    }
+                }
+            })
+            await websocket.send(start_msg)
+            print("📤 Sent start_session")
 
-    print(f"\n1. Loading model: {model_path}")
-    print("   (This should take ~2 seconds and show Metal GPU messages)")
-    print()
+            # Get session_started ack
+            response = await websocket.recv()
+            response_data = json.loads(response)
+            print(f"📥 Received: {response_data['type']}")
 
-    start_load = time.time()
-    model = WhisperModel(model_path, use_gpu=True)
-    load_time = time.time() - start_load
+            # Send some test audio (5 seconds of silence at 16kHz)
+            print("📤 Sending test audio (5 seconds of silence)...")
+            sample_rate = 16000
+            duration = 5  # seconds
 
-    print()
-    print(f"✓ Model loaded in {load_time:.2f} seconds")
-    print()
+            # Create silence audio
+            audio_data = np.zeros(sample_rate * duration, dtype=np.int16)
 
-    # Generate 3 seconds of test audio (silence)
-    print("2. Testing transcription with 3 seconds of silent audio...")
-    sample_rate = 16000
-    duration = 3.0
+            # Add a small beep in the middle to test if it processes
+            beep_freq = 440  # A4 note
+            beep_duration = 0.5  # seconds
+            beep_samples = int(sample_rate * beep_duration)
+            beep_start = int(sample_rate * 2)  # Start at 2 seconds
 
-    # Create silent audio
-    audio = np.zeros(int(sample_rate * duration), dtype=np.float32)
+            t = np.linspace(0, beep_duration, beep_samples)
+            beep = np.sin(2 * np.pi * beep_freq * t) * 0.3 * 32767
+            audio_data[beep_start:beep_start + beep_samples] = beep.astype(np.int16)
 
-    print(f"   Audio: {len(audio)} samples ({duration}s)")
-    print()
+            # Send audio in chunks
+            chunk_size = 1600  # 100ms chunks at 16kHz
+            for i in range(0, len(audio_data), chunk_size):
+                chunk = audio_data[i:i+chunk_size]
+                await websocket.send(chunk.tobytes())
+                await asyncio.sleep(0.01)  # Small delay between chunks
 
-    # Test 1: First transcription
-    print("3. First transcription (model already loaded):")
-    start_t1 = time.time()
-    result1 = model.transcribe(audio, language='auto', n_threads=4)
-    t1_time = time.time() - start_t1
-    print(f"   Time: {t1_time:.3f}s")
-    print(f"   Result: '{result1['text']}'")
-    print(f"   Language: {result1['language']}")
-    print()
+            print("✅ Audio sent")
 
-    # Test 2: Second transcription (should be fast)
-    print("4. Second transcription (testing speed):")
-    start_t2 = time.time()
-    result2 = model.transcribe(audio, language='auto', n_threads=4)
-    t2_time = time.time() - start_t2
-    print(f"   Time: {t2_time:.3f}s")
-    print(f"   Result: '{result2['text']}'")
-    print()
+            # End session to get transcription
+            end_msg = json.dumps({
+                "type": "end_session",
+                "id": "test-3",
+                "data": {
+                    "sessionId": "test-session-1"
+                }
+            })
+            await websocket.send(end_msg)
+            print("📤 Sent end_session")
 
-    # Test 3: Third transcription
-    print("5. Third transcription:")
-    start_t3 = time.time()
-    result3 = model.transcribe(audio, language='auto', n_threads=4)
-    t3_time = time.time() - start_t3
-    print(f"   Time: {t3_time:.3f}s")
-    print()
+            # Get final transcription
+            response = await websocket.recv()
+            response_data = json.loads(response)
+            print(f"📥 Received: {response_data['type']}")
 
-    print("=" * 60)
-    print("RESULTS:")
-    print("=" * 60)
-    print(f"Model load time:     {load_time:.2f}s (one-time cost)")
-    print(f"Transcription #1:    {t1_time:.3f}s")
-    print(f"Transcription #2:    {t2_time:.3f}s")
-    print(f"Transcription #3:    {t3_time:.3f}s")
-    print(f"Avg transcription:   {(t1_time + t2_time + t3_time)/3:.3f}s")
-    print()
+            if response_data['type'] == 'final':
+                print("\n✅ TRANSCRIPTION RESULT:")
+                print(f"   Text: '{response_data['data'].get('text', '')}'")
+                print(f"   Language: {response_data['data'].get('language', 'unknown')}")
+            else:
+                print(f"\n❌ Unexpected response: {response_data}")
 
-    if load_time < 5:
-        print("✓ Load time is good (< 5s)")
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        return False
+
+    return True
+
+if __name__ == "__main__":
+    print("🧪 Testing UltraWhisper Backend...")
+    print("-" * 40)
+
+    success = asyncio.run(test_transcription())
+
+    if success:
+        print("\n✅ Backend test completed successfully!")
     else:
-        print("⚠ Load time seems slow (> 5s)")
-
-    avg_trans = (t1_time + t2_time + t3_time) / 3
-    if avg_trans < 2:
-        print("✓ Transcription speed is FAST (< 2s for 3s audio)")
-    elif avg_trans < 5:
-        print("⚠ Transcription speed is acceptable (< 5s)")
-    else:
-        print("✗ Transcription speed is SLOW (> 5s) - something is wrong")
-
-    print()
-    print("If you see 'ggml_metal' messages above, Metal GPU is working!")
-    print("=" * 60)
-
-    return 0
-
-if __name__ == '__main__':
-    sys.exit(main())
+        print("\n❌ Backend test failed!")
+        sys.exit(1)

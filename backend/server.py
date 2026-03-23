@@ -365,13 +365,26 @@ async def main():
         logger.info(f"WebSocket server started on {args.host}:{actual_port}")
         logger.info(f"Using Metal GPU acceleration on Apple M3 Max")
 
-        # Set up signal handlers
+        # Set up comprehensive signal handlers for graceful shutdown
+        shutdown_event = asyncio.Event()
+
         def signal_handler(signum, frame):
-            logger.info("Shutting down server...")
+            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+            shutdown_event.set()
             server.close()
 
+            # Clean up any active sessions
+            for session_id in list(backend.sessions.keys()):
+                logger.info(f"Cleaning up session: {session_id}")
+                backend.remove_session(session_id)
+
+        # Handle multiple signals for robustness
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
+
+        # Also handle SIGHUP (hangup) which can occur during force quit
+        if hasattr(signal, 'SIGHUP'):
+            signal.signal(signal.SIGHUP, signal_handler)
 
         # Wait for server to close
         await server.wait_closed()
