@@ -278,7 +278,10 @@ class BackendService {
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen((line) {
-        AppLogger.debug('Backend stdout: $line');
+        // Only log port-related lines; Python backend already prints its own output
+        if (line.startsWith('SERVER_PORT:')) {
+          AppLogger.debug('Backend: $line');
+        }
         
         // Look for port information in the format "SERVER_PORT:8080"
         if (line.startsWith('SERVER_PORT:')) {
@@ -297,23 +300,23 @@ class BackendService {
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen((line) {
-        AppLogger.error('Backend stderr: $line');
         stderrBuffer.writeln(line);
 
-        // Check for common library loading errors
+        // Only surface critical library loading errors; routine stderr already visible
         if (line.contains('dyld') || line.contains('Library not loaded') ||
             line.contains('libggml') || line.contains('libwhisper')) {
-          AppLogger.error('⚠️ CRITICAL: Dynamic library loading error detected!');
+          AppLogger.error('CRITICAL: Dynamic library loading error detected!');
           AppLogger.error('This likely means GGML libraries are missing from the app bundle.');
         }
       });
       
       // Monitor process exit
       _backendProcess!.exitCode.then((exitCode) {
-        AppLogger.error('Backend process exited with code: $exitCode');
-        if (exitCode != 0 && stderrBuffer.isNotEmpty) {
-          AppLogger.error('Backend stderr output:');
-          AppLogger.error(stderrBuffer.toString());
+        if (exitCode != 0) {
+          AppLogger.error('Backend process exited with code: $exitCode');
+          if (stderrBuffer.isNotEmpty) {
+            AppLogger.error('Backend stderr:\n$stderrBuffer');
+          }
         }
         if (!completer.isCompleted) {
           completer.complete(null);

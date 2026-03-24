@@ -43,6 +43,98 @@ class WhisperState(ctypes.Structure):
     pass
 
 
+# Nested structs for whisper_full_params
+class _GreedyParams(ctypes.Structure):
+    _fields_ = [("best_of", ctypes.c_int)]
+
+
+class _BeamSearchParams(ctypes.Structure):
+    _fields_ = [
+        ("beam_size", ctypes.c_int),
+        ("patience", ctypes.c_float),
+    ]
+
+
+class _WhisperVadParams(ctypes.Structure):
+    _fields_ = [
+        ("threshold", ctypes.c_float),
+        ("min_speech_duration_ms", ctypes.c_int),
+        ("min_silence_duration_ms", ctypes.c_int),
+        ("max_speech_duration_s", ctypes.c_float),
+        ("speech_pad_ms", ctypes.c_int),
+        ("samples_overlap", ctypes.c_float),
+    ]
+
+
+class WhisperFullParams(ctypes.Structure):
+    """
+    Mirrors whisper_full_params from whisper.h exactly.
+    Field order and types must match the C struct layout.
+    """
+    _fields_ = [
+        ("strategy", ctypes.c_int),           # enum whisper_sampling_strategy
+        ("n_threads", ctypes.c_int),
+        ("n_max_text_ctx", ctypes.c_int),
+        ("offset_ms", ctypes.c_int),
+        ("duration_ms", ctypes.c_int),
+        ("translate", ctypes.c_bool),
+        ("no_context", ctypes.c_bool),
+        ("no_timestamps", ctypes.c_bool),
+        ("single_segment", ctypes.c_bool),
+        ("print_special", ctypes.c_bool),
+        ("print_progress", ctypes.c_bool),
+        ("print_realtime", ctypes.c_bool),
+        ("print_timestamps", ctypes.c_bool),
+        ("token_timestamps", ctypes.c_bool),
+        ("thold_pt", ctypes.c_float),
+        ("thold_ptsum", ctypes.c_float),
+        ("max_len", ctypes.c_int),
+        ("split_on_word", ctypes.c_bool),
+        ("max_tokens", ctypes.c_int),
+        ("debug_mode", ctypes.c_bool),
+        ("audio_ctx", ctypes.c_int),
+        ("tdrz_enable", ctypes.c_bool),
+        ("suppress_regex", ctypes.c_char_p),
+        ("initial_prompt", ctypes.c_char_p),
+        ("carry_initial_prompt", ctypes.c_bool),
+        ("prompt_tokens", ctypes.c_void_p),   # const whisper_token*
+        ("prompt_n_tokens", ctypes.c_int),
+        ("language", ctypes.c_char_p),         # for auto-detect, set to None/""/b"auto"
+        ("detect_language", ctypes.c_bool),
+        ("suppress_blank", ctypes.c_bool),
+        ("suppress_nst", ctypes.c_bool),
+        ("temperature", ctypes.c_float),
+        ("max_initial_ts", ctypes.c_float),
+        ("length_penalty", ctypes.c_float),
+        ("temperature_inc", ctypes.c_float),
+        ("entropy_thold", ctypes.c_float),
+        ("logprob_thold", ctypes.c_float),
+        ("no_speech_thold", ctypes.c_float),
+        ("greedy", _GreedyParams),
+        ("beam_search", _BeamSearchParams),
+        # Callbacks (function pointers, treated as void* since we don't use them)
+        ("new_segment_callback", ctypes.c_void_p),
+        ("new_segment_callback_user_data", ctypes.c_void_p),
+        ("progress_callback", ctypes.c_void_p),
+        ("progress_callback_user_data", ctypes.c_void_p),
+        ("encoder_begin_callback", ctypes.c_void_p),
+        ("encoder_begin_callback_user_data", ctypes.c_void_p),
+        ("abort_callback", ctypes.c_void_p),
+        ("abort_callback_user_data", ctypes.c_void_p),
+        ("logits_filter_callback", ctypes.c_void_p),
+        ("logits_filter_callback_user_data", ctypes.c_void_p),
+        # Grammar
+        ("grammar_rules", ctypes.c_void_p),
+        ("n_grammar_rules", ctypes.c_size_t),
+        ("i_start_rule", ctypes.c_size_t),
+        ("grammar_penalty", ctypes.c_float),
+        # VAD
+        ("vad", ctypes.c_bool),
+        ("vad_model_path", ctypes.c_char_p),
+        ("vad_params", _WhisperVadParams),
+    ]
+
+
 # Function prototypes
 libwhisper.whisper_context_default_params.restype = WhisperContextParams
 
@@ -55,16 +147,19 @@ libwhisper.whisper_init_from_file_with_params.restype = ctypes.POINTER(WhisperCo
 libwhisper.whisper_free.argtypes = [ctypes.POINTER(WhisperContext)]
 libwhisper.whisper_free.restype = None
 
-# We need a reference to whisper_full_params, but it's complex
-# So we'll use the C function to get default params
-libwhisper.whisper_full_default_params_by_ref.argtypes = [ctypes.c_int]
-libwhisper.whisper_full_default_params_by_ref.restype = ctypes.c_void_p
+# Get default params by value (preferred — no manual memory management needed)
+libwhisper.whisper_full_default_params.argtypes = [ctypes.c_int]
+libwhisper.whisper_full_default_params.restype = WhisperFullParams
+
+# Free params allocated by _by_ref variant (kept for completeness)
+libwhisper.whisper_free_params.argtypes = [ctypes.c_void_p]
+libwhisper.whisper_free_params.restype = None
 
 libwhisper.whisper_full.argtypes = [
     ctypes.POINTER(WhisperContext),
-    ctypes.c_void_p,  # whisper_full_params pointer
-    ctypes.POINTER(ctypes.c_float),  # audio data
-    ctypes.c_int  # number of samples
+    WhisperFullParams,             # params by value
+    ctypes.POINTER(ctypes.c_float),
+    ctypes.c_int
 ]
 libwhisper.whisper_full.restype = ctypes.c_int
 
@@ -91,6 +186,9 @@ libwhisper.whisper_full_get_segment_t1.restype = ctypes.c_int64
 
 libwhisper.whisper_full_lang_id.argtypes = [ctypes.POINTER(WhisperContext)]
 libwhisper.whisper_full_lang_id.restype = ctypes.c_int
+
+libwhisper.whisper_lang_id.argtypes = [ctypes.c_char_p]
+libwhisper.whisper_lang_id.restype = ctypes.c_int
 
 libwhisper.whisper_lang_str.argtypes = [ctypes.c_int]
 libwhisper.whisper_lang_str.restype = ctypes.c_char_p
@@ -138,7 +236,7 @@ class WhisperModel:
 
         Args:
             audio: Audio data as float32 numpy array (PCM, 16kHz, mono)
-            language: Language code ('en', 'ja', 'auto', etc.) or None for auto-detect
+            language: Language code ('en', 'ja', etc.) or None/'auto' for auto-detect
             n_threads: Number of threads to use
 
         Returns:
@@ -152,28 +250,17 @@ class WhisperModel:
             else:
                 audio = audio.astype(np.float32)
 
-        # Get default transcription params
-        # Use greedy sampling (0)
-        params_ptr = libwhisper.whisper_full_default_params_by_ref(
-            WHISPER_SAMPLING_GREEDY
-        )
+        # Get default transcription params (by value — clean Python struct, no raw offsets)
+        params = libwhisper.whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
 
-        # Use simple byte offset approach (this works!)
-        # The struct starts with strategy, then n_threads at offset 4
-        params_bytes = ctypes.cast(params_ptr, ctypes.POINTER(ctypes.c_int))
-        params_bytes[1] = n_threads  # n_threads is second field
+        # Set params by name (no fragile byte offsets)
+        params.n_threads = n_threads
+        params.translate = False   # transcribe only — never translate to English
 
-        # Set translate to false (offset 20) - we want transcription, not translation!
-        # This ensures we get Japanese as Japanese, not translated to English
-        translate_ptr = ctypes.cast(
-            ctypes.addressof(ctypes.cast(params_ptr, ctypes.POINTER(ctypes.c_char)).contents) + 20,
-            ctypes.POINTER(ctypes.c_bool)
-        )
-        translate_ptr[0] = False
+        # Keep byte strings alive for the duration of the whisper_full call
+        _lang_bytes = None
 
-        # Set language if specified (simple approach)
-        if language and language != 'auto':
-            # Map language codes
+        if language and language not in ('auto', ''):
             lang_map = {
                 'en': 'en',
                 'english': 'en',
@@ -181,23 +268,11 @@ class WhisperModel:
                 'japanese': 'ja',
             }
             lang_code = lang_map.get(language.lower(), language.lower())
-
-            # Get language ID using whisper.cpp function
-            lang_id = libwhisper.whisper_lang_id(lang_code.encode('utf-8'))
-
-            # Set the language in params using simple offset (language field is at offset 48 in the struct)
-            # This is a simpler approach than the complex one we had before
-            lang_ptr = ctypes.cast(
-                ctypes.addressof(ctypes.cast(params_ptr, ctypes.POINTER(ctypes.c_char)).contents) + 48,
-                ctypes.POINTER(ctypes.c_char)
-            )
-            # Copy the language code string
-            for i, c in enumerate(lang_code.encode('utf-8')):
-                lang_ptr[i] = c
-            lang_ptr[len(lang_code)] = 0  # Null terminate
-
-            print(f"🎌 Language explicitly set to: {lang_code} (id: {lang_id})")
+            _lang_bytes = lang_code.encode('utf-8')
+            params.language = _lang_bytes
+            print(f"🎌 Language explicitly set to: {lang_code}")
         else:
+            params.language = None  # whisper.cpp auto-detects when NULL
             print("🌍 Using auto-language detection")
 
         # Create pointer to audio data
@@ -206,7 +281,7 @@ class WhisperModel:
         # Run transcription
         result = libwhisper.whisper_full(
             self.ctx,
-            params_ptr,
+            params,
             audio_ptr,
             len(audio)
         )

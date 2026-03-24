@@ -107,6 +107,19 @@ class WhisperCppBackend:
                     'avg_logprob': 0.0
                 }
 
+            # Energy-based VAD: reject near-silent audio to prevent hallucinations
+            audio_float = audio_array.astype(np.float32) / 32768.0
+            rms = np.sqrt(np.mean(audio_float ** 2))
+            if rms < 0.01:
+                logger.info(f"🔇 Audio too quiet (RMS={rms:.4f}) — skipping to prevent hallucination")
+                return {
+                    'session_id': session_id,
+                    'text': '',
+                    'segments': [],
+                    'language': 'en',
+                    'avg_logprob': 0.0
+                }
+
             logger.info(f"Transcribing {len(audio_array)/16000:.2f}s of audio for session {session_id}")
 
             # Get language from session config, default to 'auto' for auto-detection
@@ -365,26 +378,13 @@ async def main():
         logger.info(f"WebSocket server started on {args.host}:{actual_port}")
         logger.info(f"Using Metal GPU acceleration on Apple M3 Max")
 
-        # Set up comprehensive signal handlers for graceful shutdown
-        shutdown_event = asyncio.Event()
-
+        # Set up signal handlers
         def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-            shutdown_event.set()
+            logger.info("Shutting down server...")
             server.close()
 
-            # Clean up any active sessions
-            for session_id in list(backend.sessions.keys()):
-                logger.info(f"Cleaning up session: {session_id}")
-                backend.remove_session(session_id)
-
-        # Handle multiple signals for robustness
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-
-        # Also handle SIGHUP (hangup) which can occur during force quit
-        if hasattr(signal, 'SIGHUP'):
-            signal.signal(signal.SIGHUP, signal_handler)
 
         # Wait for server to close
         await server.wait_closed()
