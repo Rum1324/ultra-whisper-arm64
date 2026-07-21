@@ -37,20 +37,14 @@ class StartSessionCommand {
   final String sessionId;
   final String? language;
   final String task;
-  final String model;
-  final String device;
-  final String computeType;
   final bool vad;
   final bool enablePartial;
   final PostProcessingOptions post;
-  
+
   const StartSessionCommand({
     required this.sessionId,
     this.language,
     this.task = 'transcribe',
-    required this.model,
-    required this.device,
-    required this.computeType,
     this.vad = false,
     this.enablePartial = true,
     required this.post,

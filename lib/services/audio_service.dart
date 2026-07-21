@@ -57,8 +57,8 @@ class AudioService {
     }
   }
   
-  Future<void> startRecording(String deviceId) async {
-    AppLogger.audio('AudioService.startRecording() called with device: $deviceId');
+  Future<void> startRecording() async {
+    AppLogger.audio('AudioService.startRecording() called');
     
     if (_isRecording) {
       AppLogger.warning('Already recording - ignoring start request');

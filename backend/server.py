@@ -16,6 +16,7 @@ from typing import Dict, Optional, Any
 import websockets
 import numpy as np
 from whisper_wrapper import WhisperModel
+from postprocess import apply_post_processing
 
 # Configure logging
 logging.basicConfig(
@@ -131,14 +132,27 @@ class WhisperCppBackend:
             whisper_language = None if language == 'auto' else language
             logger.info(f"📤 Passing to whisper: language='{whisper_language}' (None = auto-detect)")
 
+            # Post-processing options and custom dictionary terms from the client
+            post = session.config.get('post') or {}
+            custom_terms = post.get('customTerms') or []
+            initial_prompt = ', '.join(custom_terms) if custom_terms else None
+            if initial_prompt:
+                logger.info(f"📖 Using custom dictionary terms: {custom_terms}")
+
             # Use the in-memory model - MUCH faster!
             result = self.model.transcribe(
                 audio_array,
                 language=whisper_language,
-                n_threads=4
+                n_threads=4,
+                initial_prompt=initial_prompt
             )
 
-            full_text = result['text']
+            full_text = apply_post_processing(
+                result['text'],
+                smart_caps=post.get('smartCaps', True),
+                punctuation=post.get('punctuation', True),
+                disfluency_cleanup=post.get('disfluencyCleanup', True),
+            )
             segments = result['segments']
             detected_language = result['language']
 

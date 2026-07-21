@@ -290,32 +290,6 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           // AUDIO SECTION
           _buildSectionHeader('Audio'),
           const SizedBox(height: 16),
-          _buildLabel('Input Device'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: _settings.inputDevice,
-            onChanged: (value) {
-              if (value != null) {
-                _updateSettings(_settings.copyWith(inputDevice: value));
-              }
-            },
-            dropdownColor: const Color(0xFF2D2D2D),
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration(),
-            items: const [
-              DropdownMenuItem(
-                value: 'default',
-                child: Text('Built-in Microphone'),
-              ),
-              DropdownMenuItem(
-                value: 'blackhole',
-                child: Text('BlackHole 2ch'),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
           _buildLabel('Volume Control During Recording'),
           const SizedBox(height: 8),
           CheckboxListTile(
@@ -379,50 +353,6 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           // MODEL SECTION
           _buildSectionHeader('Transcription Model'),
           const SizedBox(height: 16),
-          _buildLabel('Whisper Model'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<WhisperModel>(
-            value: _settings.model,
-            onChanged: (value) {
-              if (value != null) {
-                _updateSettings(_settings.copyWith(model: value));
-              }
-            },
-            dropdownColor: const Color(0xFF2D2D2D),
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration(),
-            items: WhisperModel.values.map((model) {
-              return DropdownMenuItem(
-                value: model,
-                child: Text(_modelToString(model)),
-              );
-            }).toList(),
-          ),
-
-          const SizedBox(height: 16),
-
-          _buildLabel('Compute Device'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<ComputeDevice>(
-            value: _settings.device,
-            onChanged: (value) {
-              if (value != null) {
-                _updateSettings(_settings.copyWith(device: value));
-              }
-            },
-            dropdownColor: const Color(0xFF2D2D2D),
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration(),
-            items: ComputeDevice.values.map((device) {
-              return DropdownMenuItem(
-                value: device,
-                child: Text(_deviceToString(device)),
-              );
-            }).toList(),
-          ),
-
-          const SizedBox(height: 16),
-
           _buildLabel('Model Storage Path (Read-only)'),
           const SizedBox(height: 8),
           TextFormField(
@@ -436,62 +366,16 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
 
           const SizedBox(height: 32),
 
-          // LANGUAGE SECTION
-          _buildSectionHeader('Language'),
-          const SizedBox(height: 16),
-          CheckboxListTile(
-            title: const Text(
-              'Auto-detect Language',
-              style: TextStyle(color: Colors.white),
-            ),
-            value: _settings.autoDetectLanguage,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(
-                autoDetectLanguage: value ?? true,
-              ));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          if (!_settings.autoDetectLanguage) ...[
-            const SizedBox(height: 16),
-            _buildLabel('Manual Language Override'),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<Language>(
-              value: _settings.manualLanguage,
-              onChanged: (value) {
-                if (value != null) {
-                  _updateSettings(_settings.copyWith(manualLanguage: value));
-                }
-              },
-              dropdownColor: const Color(0xFF2D2D2D),
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration(),
-              items: Language.values.map((lang) {
-                return DropdownMenuItem(
-                  value: lang,
-                  child: Text(_languageToString(lang)),
-                );
-              }).toList(),
-            ),
-          ],
-
-          const SizedBox(height: 32),
-
           // SHORTCUTS SECTION
           _buildSectionHeader('Keyboard Shortcuts'),
-          const SizedBox(height: 16),
-          HotkeyRecorder(
-            label: 'Hold-to-talk',
-            initialValue: _settings.holdToTalkHotkey,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(holdToTalkHotkey: value));
-            },
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              'Language is always auto-detected — no need to pick English or Japanese.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
           ),
-
-          const SizedBox(height: 16),
-
           HotkeyRecorder(
             label: 'Toggle Record',
             initialValue: _settings.toggleRecordHotkey,
@@ -500,39 +384,20 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             },
           ),
 
+          const SizedBox(height: 16),
+
+          HotkeyRecorder(
+            label: 'Toggle Record + Enter',
+            initialValue: _settings.toggleRecordEnterHotkey,
+            onChanged: (value) {
+              _updateSettings(_settings.copyWith(toggleRecordEnterHotkey: value));
+            },
+          ),
+
           const SizedBox(height: 32),
 
           // APPEARANCE SECTION
           _buildSectionHeader('Appearance'),
-          const SizedBox(height: 16),
-
-          _buildLabel('Blur Radius'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: _settings.glassBlurRadius,
-                  min: 0,
-                  max: 50,
-                  divisions: 50,
-                  label: _settings.glassBlurRadius.round().toString(),
-                  onChanged: (value) {
-                    _updateSettings(_settings.copyWith(glassBlurRadius: value));
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 60,
-                child: Text(
-                  '${_settings.glassBlurRadius.round()}px',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ),
-            ],
-          ),
-
           const SizedBox(height: 16),
 
           _buildLabel('Glass Opacity'),
@@ -555,35 +420,6 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 width: 60,
                 child: Text(
                   '${(_settings.glassOpacity * 100).round()}%',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          _buildLabel('Border Opacity'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: _settings.borderOpacity,
-                  min: 0.0,
-                  max: 1.0,
-                  divisions: 100,
-                  label: '${(_settings.borderOpacity * 100).round()}%',
-                  onChanged: (value) {
-                    _updateSettings(_settings.copyWith(borderOpacity: value));
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 60,
-                child: Text(
-                  '${(_settings.borderOpacity * 100).round()}%',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
                 ),
@@ -673,28 +509,6 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           // ADVANCED SECTION
           _buildSectionHeader('Advanced'),
           const SizedBox(height: 16),
-          _buildLabel('Logging Level'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: _settings.loggingLevel,
-            onChanged: (value) {
-              if (value != null) {
-                _updateSettings(_settings.copyWith(loggingLevel: value));
-              }
-            },
-            dropdownColor: const Color(0xFF2D2D2D),
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration(),
-            items: const [
-              DropdownMenuItem(value: 'DEBUG', child: Text('Debug')),
-              DropdownMenuItem(value: 'INFO', child: Text('Info')),
-              DropdownMenuItem(value: 'WARNING', child: Text('Warning')),
-              DropdownMenuItem(value: 'ERROR', child: Text('Error')),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
           _buildLabel('Post-processing Options'),
           const SizedBox(height: 8),
           CheckboxListTile(
@@ -756,28 +570,6 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             ),
           ),
           _buildCustomTermsField(),
-
-          const SizedBox(height: 32),
-
-          _buildLabel('Default Paste Action'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<PasteAction>(
-            value: _settings.defaultAction,
-            onChanged: (value) {
-              if (value != null) {
-                _updateSettings(_settings.copyWith(defaultAction: value));
-              }
-            },
-            dropdownColor: const Color(0xFF2D2D2D),
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration(),
-            items: PasteAction.values.map((action) {
-              return DropdownMenuItem(
-                value: action,
-                child: Text(_pasteActionToString(action)),
-              );
-            }).toList(),
-          ),
         ],
       ),
     );
@@ -895,51 +687,4 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     );
   }
 
-  String _pasteActionToString(PasteAction action) {
-    switch (action) {
-      case PasteAction.paste:
-        return 'Paste';
-      case PasteAction.pasteWithEnter:
-        return 'Paste + Enter';
-      case PasteAction.clipboardOnly:
-        return 'Clipboard Only';
-    }
-  }
-
-  String _modelToString(WhisperModel model) {
-    switch (model) {
-      case WhisperModel.small:
-        return 'small';
-      case WhisperModel.medium:
-        return 'medium';
-      case WhisperModel.large:
-        return 'large';
-      case WhisperModel.largeV3:
-        return 'large-v3';
-      case WhisperModel.largeV3Turbo:
-        return 'large-v3-turbo';
-    }
-  }
-
-  String _deviceToString(ComputeDevice device) {
-    switch (device) {
-      case ComputeDevice.auto:
-        return 'Auto';
-      case ComputeDevice.metal:
-        return 'Metal (GPU)';
-      case ComputeDevice.cpu:
-        return 'CPU';
-    }
-  }
-
-  String _languageToString(Language language) {
-    switch (language) {
-      case Language.auto:
-        return 'Auto-detect';
-      case Language.english:
-        return 'English';
-      case Language.japanese:
-        return 'Japanese';
-    }
-  }
 }

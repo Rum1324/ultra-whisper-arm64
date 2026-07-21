@@ -46,6 +46,7 @@ class AppService extends ChangeNotifier {
   Timer? _recordingTimer;
   StreamSubscription? _audioStreamSubscription;
   WebSocketChannel? _webSocketChannel;
+  bool _pressEnterOnPaste = false;
 
   AppState get state => _state;
   Settings get settings => _settings;
@@ -332,32 +333,7 @@ class AppService extends ChangeNotifier {
   Future<void> _setupHotkeys() async {
     AppLogger.hotkey('Setting up hotkeys...');
 
-    // Register hold-to-talk hotkey
-    if (_settings.holdToTalkHotkey.isNotEmpty) {
-      AppLogger.hotkey(
-        'Registering hold-to-talk hotkey: ${_settings.holdToTalkHotkey}',
-      );
-      try {
-        await _hotkeyService.registerHotkey(
-          _settings.holdToTalkHotkey,
-          onPressed: () {
-            AppLogger.hotkey('Hold-to-talk hotkey PRESSED');
-            startRecording();
-          },
-          onReleased: () {
-            AppLogger.hotkey('Hold-to-talk hotkey RELEASED');
-            stopRecording();
-          },
-        );
-        AppLogger.success('Hold-to-talk hotkey registered successfully');
-      } catch (e) {
-        AppLogger.error('Failed to register hold-to-talk hotkey', e);
-      }
-    } else {
-      AppLogger.warning('No hold-to-talk hotkey configured');
-    }
-
-    // Register toggle recording hotkey
+    // Register toggle recording hotkey (paste only, no Enter)
     if (_settings.toggleRecordHotkey.isNotEmpty) {
       AppLogger.hotkey(
         'Registering toggle recording hotkey: ${_settings.toggleRecordHotkey}',
@@ -378,53 +354,32 @@ class AppService extends ChangeNotifier {
       AppLogger.warning('No toggle recording hotkey configured');
     }
 
-    // Register Japanese hold-to-talk hotkey
-    if (_settings.holdToTalkJapaneseHotkey.isNotEmpty) {
+    // Register toggle recording + Enter hotkey (paste, then press Enter)
+    if (_settings.toggleRecordEnterHotkey.isNotEmpty) {
       AppLogger.hotkey(
-        'Registering Japanese hold-to-talk hotkey: ${_settings.holdToTalkJapaneseHotkey}',
+        'Registering toggle recording + Enter hotkey: ${_settings.toggleRecordEnterHotkey}',
       );
       try {
         await _hotkeyService.registerHotkey(
-          _settings.holdToTalkJapaneseHotkey,
+          _settings.toggleRecordEnterHotkey,
           onPressed: () {
-            AppLogger.hotkey('Japanese hold-to-talk hotkey PRESSED');
-            startRecordingJapanese();
-          },
-          onReleased: () {
-            AppLogger.hotkey('Japanese hold-to-talk hotkey RELEASED');
-            stopRecording();
+            AppLogger.hotkey('Toggle recording + Enter hotkey PRESSED');
+            toggleRecording(pressEnter: true);
           },
         );
-        AppLogger.success('Japanese hold-to-talk hotkey registered successfully');
+        AppLogger.success('Toggle recording + Enter hotkey registered successfully');
       } catch (e) {
-        AppLogger.error('Failed to register Japanese hold-to-talk hotkey', e);
+        AppLogger.error('Failed to register toggle recording + Enter hotkey', e);
       }
-    }
-
-    // Register Japanese toggle recording hotkey
-    if (_settings.toggleRecordJapaneseHotkey.isNotEmpty) {
-      AppLogger.hotkey(
-        'Registering Japanese toggle recording hotkey: ${_settings.toggleRecordJapaneseHotkey}',
-      );
-      try {
-        await _hotkeyService.registerHotkey(
-          _settings.toggleRecordJapaneseHotkey,
-          onPressed: () {
-            AppLogger.hotkey('Japanese toggle recording hotkey PRESSED');
-            toggleRecordingJapanese();
-          },
-        );
-        AppLogger.success('Japanese toggle recording hotkey registered successfully');
-      } catch (e) {
-        AppLogger.error('Failed to register Japanese toggle recording hotkey', e);
-      }
+    } else {
+      AppLogger.warning('No toggle recording + Enter hotkey configured');
     }
 
     AppLogger.success('Hotkey setup completed');
   }
 
-  Future<void> startRecording({String? forceLanguage}) async {
-    AppLogger.audio('startRecording() called with forceLanguage: $forceLanguage');
+  Future<void> startRecording() async {
+    AppLogger.audio('startRecording() called');
     AppLogger.debug('Current recording state: ${_state.recordingState}');
 
     if (_state.recordingState != RecordingState.idle) {
@@ -457,23 +412,11 @@ class AppService extends ChangeNotifier {
       _currentSessionId = _uuid.v4();
       AppLogger.debug('Generated session ID: $_currentSessionId');
 
-      // Send start session command to backend
-      final String languageCode;
-      if (forceLanguage != null) {
-        languageCode = forceLanguage;
-        AppLogger.info('🌐 Using forced language: $forceLanguage');
-      } else {
-        languageCode = _getLanguageCode(_settings.autoDetectLanguage, _settings.manualLanguage);
-        AppLogger.info('🌐 Language setting: autoDetect=${_settings.autoDetectLanguage}, manual=${_settings.manualLanguage.name}, sending: $languageCode');
-      }
-
+      // Send start session command to backend — language is always auto-detected
       final startCommand = StartSessionCommand(
         sessionId: _currentSessionId!,
-        model: _settings.model.name,
-        device: _settings.device.name,
-        computeType: _settings.computeType.name,
         enablePartial: true,
-        language: languageCode,
+        language: 'auto',
         post: PostProcessingOptions(
           smartCaps: _settings.smartCapitalization,
           punctuation: _settings.punctuation,
@@ -492,10 +435,8 @@ class AppService extends ChangeNotifier {
       AppLogger.websocket('Sent start_session command to backend');
 
       // Start audio recording
-      AppLogger.audio(
-        'Starting audio recording with device: ${_settings.inputDevice}',
-      );
-      await _audioService.startRecording(_settings.inputDevice);
+      AppLogger.audio('Starting audio recording...');
+      await _audioService.startRecording();
       AppLogger.success('Audio recording started successfully');
 
       // Listen to audio stream
@@ -679,36 +620,14 @@ class AppService extends ChangeNotifier {
     }
   }
 
-  Future<void> toggleRecording() async {
-    AppLogger.audio('toggleRecording() called');
+  Future<void> toggleRecording({bool pressEnter = false}) async {
+    AppLogger.audio('toggleRecording() called with pressEnter: $pressEnter');
     AppLogger.debug('Current state: ${_state.recordingState}');
 
     if (_state.recordingState == RecordingState.idle) {
       AppLogger.info('Toggling from idle to recording');
+      _pressEnterOnPaste = pressEnter;
       await startRecording();
-    } else if (_state.recordingState == RecordingState.recording) {
-      AppLogger.info('Toggling from recording to stop');
-      await stopRecording();
-    } else {
-      AppLogger.warning(
-        'Cannot toggle recording in current state: ${_state.recordingState}',
-      );
-    }
-  }
-
-  // Japanese-specific recording methods
-  Future<void> startRecordingJapanese() async {
-    AppLogger.audio('startRecordingJapanese() called');
-    await startRecording(forceLanguage: 'ja');
-  }
-
-  Future<void> toggleRecordingJapanese() async {
-    AppLogger.audio('toggleRecordingJapanese() called');
-    AppLogger.debug('Current state: ${_state.recordingState}');
-
-    if (_state.recordingState == RecordingState.idle) {
-      AppLogger.info('Toggling from idle to recording (Japanese)');
-      await startRecording(forceLanguage: 'ja');
     } else if (_state.recordingState == RecordingState.recording) {
       AppLogger.info('Toggling from recording to stop');
       await stopRecording();
@@ -725,7 +644,7 @@ class AppService extends ChangeNotifier {
     debugPrint('🎤 FINAL TRANSCRIPTION RECEIVED');
     debugPrint('Text: "$text"');
     debugPrint('Length: ${text.length} characters');
-    debugPrint('Default action: ${_settings.defaultAction}');
+    debugPrint('Press Enter after paste: $_pressEnterOnPaste');
     debugPrint('════════════════════════════════════════');
 
     _updateState(
@@ -752,7 +671,7 @@ class AppService extends ChangeNotifier {
     // Perform paste action
     try {
       debugPrint('Attempting to perform paste action...');
-      await _pasteService.performPasteAction(text, _settings.defaultAction);
+      await _pasteService.performPasteAction(text, pressEnter: _pressEnterOnPaste);
       debugPrint('Paste action completed successfully');
     } catch (e) {
       debugPrint('❌ Failed to perform paste action: $e');
@@ -760,6 +679,7 @@ class AppService extends ChangeNotifier {
     }
 
     _currentSessionId = null;
+    _pressEnterOnPaste = false;
   }
 
   void _handleTranscriptionError(String error) async {
@@ -966,23 +886,6 @@ class AppService extends ChangeNotifier {
   void _updateState(AppState newState) {
     _state = newState;
     notifyListeners();
-  }
-
-  /// Convert Flutter language settings to whisper.cpp language code
-  String _getLanguageCode(bool autoDetect, Language manualLanguage) {
-    if (autoDetect) {
-      return 'auto';
-    }
-
-    // Convert Language enum to whisper.cpp language codes
-    switch (manualLanguage) {
-      case Language.auto:
-        return 'auto';
-      case Language.english:
-        return 'en';
-      case Language.japanese:
-        return 'ja';
-    }
   }
 
   Future<void> cleanup() async {

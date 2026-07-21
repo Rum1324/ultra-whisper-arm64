@@ -1,25 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../models/settings.dart';
 import 'keystroke_service.dart';
 
 class PasteService {
   final KeystrokeService _keystrokeService = KeystrokeService();
-  Future<void> performPasteAction(String text, PasteAction action) async {
+  Future<void> performPasteAction(String text, {bool pressEnter = false}) async {
     try {
-      switch (action) {
-        case PasteAction.paste:
-          await _pasteWithClipboardPreservation(text, false);
-          break;
-        case PasteAction.pasteWithEnter:
-          await _pasteWithClipboardPreservation(text, true);
-          break;
-        case PasteAction.clipboardOnly:
-          await _copyToClipboard(text);
-          break;
-      }
-      debugPrint('Paste action completed: $action');
+      await _pasteWithClipboardPreservation(text, pressEnter);
+      debugPrint('Paste action completed (pressEnter: $pressEnter)');
     } catch (e) {
       debugPrint('Failed to perform paste action: $e');
       throw Exception('Paste action failed: $e');

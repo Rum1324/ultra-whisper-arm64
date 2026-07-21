@@ -10,15 +10,9 @@ enum AudioSource {
   systemAudio
 }
 
-enum CaptureMode {
-  holdToTalk,
-  toggle
-}
-
 class AppState {
   final RecordingState recordingState;
   final AudioSource audioSource;
-  final CaptureMode captureMode;
   final String? partialText;
   final String? finalText;
   final String? errorMessage;
@@ -31,7 +25,6 @@ class AppState {
   const AppState({
     this.recordingState = RecordingState.idle,
     this.audioSource = AudioSource.microphone,
-    this.captureMode = CaptureMode.holdToTalk,
     this.partialText,
     this.finalText,
     this.errorMessage,
@@ -45,7 +38,6 @@ class AppState {
   AppState copyWith({
     RecordingState? recordingState,
     AudioSource? audioSource,
-    CaptureMode? captureMode,
     String? partialText,
     String? finalText,
     String? errorMessage,
@@ -58,7 +50,6 @@ class AppState {
     return AppState(
       recordingState: recordingState ?? this.recordingState,
       audioSource: audioSource ?? this.audioSource,
-      captureMode: captureMode ?? this.captureMode,
       partialText: partialText ?? this.partialText,
       finalText: finalText ?? this.finalText,
       errorMessage: errorMessage ?? this.errorMessage,

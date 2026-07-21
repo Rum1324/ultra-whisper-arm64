@@ -229,7 +229,8 @@ class WhisperModel:
         self,
         audio: np.ndarray,
         language: Optional[str] = None,
-        n_threads: int = 4
+        n_threads: int = 4,
+        initial_prompt: Optional[str] = None
     ) -> Dict:
         """
         Transcribe audio using the loaded model
@@ -238,6 +239,8 @@ class WhisperModel:
             audio: Audio data as float32 numpy array (PCM, 16kHz, mono)
             language: Language code ('en', 'ja', etc.) or None/'auto' for auto-detect
             n_threads: Number of threads to use
+            initial_prompt: Optional text used to bias decoding toward specific
+                vocabulary (e.g. custom dictionary terms)
 
         Returns:
             Dictionary with transcription results
@@ -259,6 +262,13 @@ class WhisperModel:
 
         # Keep byte strings alive for the duration of the whisper_full call
         _lang_bytes = None
+        _prompt_bytes = None
+
+        if initial_prompt:
+            _prompt_bytes = initial_prompt.encode('utf-8')
+            params.initial_prompt = _prompt_bytes
+            params.carry_initial_prompt = True
+            print(f"📖 Custom vocabulary prompt: {initial_prompt}")
 
         if language and language not in ('auto', ''):
             lang_map = {

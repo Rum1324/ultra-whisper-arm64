@@ -21,6 +21,9 @@ cp -f "${PROJECT_DIR}/backend/server.py" "${BUNDLE_RESOURCES}/backend/"
 echo "Copying backend/whisper_wrapper.py..."
 cp -f "${PROJECT_DIR}/backend/whisper_wrapper.py" "${BUNDLE_RESOURCES}/backend/"
 
+echo "Copying backend/postprocess.py..."
+cp -f "${PROJECT_DIR}/backend/postprocess.py" "${BUNDLE_RESOURCES}/backend/"
+
 echo "Copying backend/requirements.txt..."
 cp -f "${PROJECT_DIR}/backend/requirements.txt" "${BUNDLE_RESOURCES}/backend/"
 
