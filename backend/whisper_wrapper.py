@@ -193,6 +193,27 @@ libwhisper.whisper_lang_id.restype = ctypes.c_int
 libwhisper.whisper_lang_str.argtypes = [ctypes.c_int]
 libwhisper.whisper_lang_str.restype = ctypes.c_char_p
 
+# Cheap language pre-detection (encode + detect, no full decode) — used to
+# decide whether an English custom-vocabulary prompt is safe to apply.
+libwhisper.whisper_pcm_to_mel.argtypes = [
+    ctypes.POINTER(WhisperContext),
+    ctypes.POINTER(ctypes.c_float),
+    ctypes.c_int,
+    ctypes.c_int,
+]
+libwhisper.whisper_pcm_to_mel.restype = ctypes.c_int
+
+libwhisper.whisper_lang_auto_detect.argtypes = [
+    ctypes.POINTER(WhisperContext),
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.POINTER(ctypes.c_float),
+]
+libwhisper.whisper_lang_auto_detect.restype = ctypes.c_int
+
+libwhisper.whisper_lang_max_id.argtypes = []
+libwhisper.whisper_lang_max_id.restype = ctypes.c_int
+
 
 # Sampling strategy enum
 WHISPER_SAMPLING_GREEDY = 0
@@ -224,6 +245,27 @@ class WhisperModel:
 
         if not self.ctx:
             raise RuntimeError(f"Failed to load model from {model_path}")
+
+    def detect_language(self, audio: np.ndarray, n_threads: int = 4) -> Optional[str]:
+        """Cheaply detect the spoken language (encode + detect, no full decode).
+
+        Returns a language code like 'en' or 'ja', or None if detection fails.
+        Costs one extra encoder pass (~0.3-0.6s for a few seconds of audio).
+        """
+        if audio.dtype != np.float32:
+            audio = audio.astype(np.float32)
+            if audio.max() > 1.0 or audio.min() < -1.0:
+                audio = audio / 32768.0
+        audio_ptr = audio.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        if libwhisper.whisper_pcm_to_mel(self.ctx, audio_ptr, len(audio), n_threads) != 0:
+            return None
+        n_langs = libwhisper.whisper_lang_max_id() + 1
+        probs = (ctypes.c_float * n_langs)()
+        lang_id = libwhisper.whisper_lang_auto_detect(self.ctx, 0, n_threads, probs)
+        if lang_id < 0:
+            return None
+        lang_str = libwhisper.whisper_lang_str(lang_id)
+        return lang_str.decode('utf-8') if lang_str else None
 
     def transcribe(
         self,
@@ -264,23 +306,37 @@ class WhisperModel:
         _lang_bytes = None
         _prompt_bytes = None
 
+        # Resolve the effective language up front. Custom-vocabulary prompts are
+        # English tech terms; applying an English prompt to non-English speech
+        # degrades the output (e.g. it strips Japanese 、。 punctuation), so we
+        # need to know the language BEFORE deciding whether to keep the prompt.
+        lang_map = {'en': 'en', 'english': 'en', 'ja': 'ja', 'japanese': 'ja'}
+        effective_language = None
+        if language and language not in ('auto', ''):
+            effective_language = lang_map.get(language.lower(), language.lower())
+        elif initial_prompt:
+            # Only pay for pre-detection when a prompt is actually in play;
+            # otherwise whisper_full auto-detects internally for free.
+            effective_language = self.detect_language(audio, n_threads)
+            print(f"🔎 Pre-detected language for prompt gating: {effective_language}")
+
+        # Gate the prompt: keep it only for English speech (its own language).
+        if initial_prompt and effective_language not in ('en', None):
+            print(f"🚫 Skipping English custom prompt for {effective_language} speech")
+            initial_prompt = None
+
         if initial_prompt:
             _prompt_bytes = initial_prompt.encode('utf-8')
             params.initial_prompt = _prompt_bytes
             params.carry_initial_prompt = True
             print(f"📖 Custom vocabulary prompt: {initial_prompt}")
 
-        if language and language not in ('auto', ''):
-            lang_map = {
-                'en': 'en',
-                'english': 'en',
-                'ja': 'ja',
-                'japanese': 'ja',
-            }
-            lang_code = lang_map.get(language.lower(), language.lower())
-            _lang_bytes = lang_code.encode('utf-8')
+        if effective_language:
+            # Pass the resolved language explicitly. When we pre-detected it,
+            # this also spares whisper_full from re-detecting.
+            _lang_bytes = effective_language.encode('utf-8')
             params.language = _lang_bytes
-            print(f"🎌 Language explicitly set to: {lang_code}")
+            print(f"🎌 Language: {effective_language}")
         else:
             params.language = None  # whisper.cpp auto-detects when NULL
             print("🌍 Using auto-language detection")

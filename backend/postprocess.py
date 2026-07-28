@@ -40,8 +40,13 @@ def _apply_smart_capitalization(text: str) -> str:
     return text
 
 
+# Sentence terminators, including full-width Japanese marks, so we neither
+# double-punctuate (…です。 -> …です。.) nor add a Latin "." to Japanese text.
+_TERMINAL_PUNCT = ".!?。！？…"
+
+
 def _ensure_terminal_punctuation(text: str) -> str:
-    if text and text[-1] not in ".!?":
+    if text and text[-1] not in _TERMINAL_PUNCT:
         return text + "."
     return text
 
