@@ -41,8 +41,13 @@ class Segment:
     meeting transcribed as a series of rolling windows produces many segments
     that each believe they start at 0s. The rolling-transcribe path is
     responsible for adding the window's absolute offset BEFORE constructing a
-    Segment. Everything downstream may assume these times are absolute and
-    monotonic across the whole meeting.
+    Segment. Everything downstream may assume these times are absolute.
+
+    `t0` is non-decreasing across a merged transcript; **`t1` is not**. The two
+    tracks are merged by `t0` alone, so a long segment on one track can end
+    after a later-starting segment on the other. Anything needing the end of a
+    span must take `max(t1)` over its segments rather than the last segment's
+    `t1`.
     """
 
     t0: float
@@ -53,7 +58,20 @@ class Segment:
 
 @dataclass(frozen=True, slots=True)
 class TranscriptWindow:
-    """A contiguous slice of the meeting handed to the map pass as one unit."""
+    """
+    A contiguous slice of the meeting.
+
+    Beware that `index` numbers TWO UNRELATED SEQUENCES depending on who built
+    the window, and they must never be conflated:
+
+    * **Rolling-transcribe windows** — fixed spans of audio (default 120s) as
+      they are transcribed live, numbered in the `transcript_window` wire event.
+    * **Map-pass windows** — the chunker's regrouping of the finished transcript
+      to fit a model's context, sized by prompt characters and overlapping.
+
+    One meeting produces both, with different counts and different boundaries.
+    An index is only meaningful next to the sequence that produced it.
+    """
 
     index: int
     t0: float
