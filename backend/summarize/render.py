@@ -117,11 +117,37 @@ def clean_text(value: Any) -> str:
     return text.strip()
 
 
+# Total items one section may emit. The hop bound below limits how DEEP the
+# walk goes but not how WIDE: a tree that shares subtrees has exponentially
+# many root-to-node paths, and an adversarial pass got 2,097,154 lines out of
+# 41 objects. json.loads cannot build that sharing so it is unreachable from a
+# model response, but "always terminates" should not depend on the caller.
+_MAX_WALK_NODES = 20_000
+
+
+def _safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
+    """
+    `getattr` that cannot raise.
+
+    The three-argument `getattr` only swallows AttributeError; a property or
+    __getattr__ raising anything else propagates straight out. This module
+    promises its guarantee holds for deliberately hostile input, and an object
+    whose attributes fight back is exactly that.
+    """
+    try:
+        return getattr(obj, name, default)
+    except Exception:
+        return default
+
+
 def _prefix_for(section: Any) -> str:
     """Section style decides the marker; anything unrecognised is a bullet."""
-    style = getattr(section, "style", None)
+    style = _safe_getattr(section, "style")
     if isinstance(style, str):
-        return _STYLE_PREFIXES.get(style.strip().lower(), BULLET_PREFIX)
+        try:
+            return _STYLE_PREFIXES.get(style.strip().lower(), BULLET_PREFIX)
+        except Exception:
+            return BULLET_PREFIX
     return BULLET_PREFIX
 
 
@@ -144,19 +170,34 @@ def flatten_items(items: Any) -> Iterator[tuple[int, str]]:
     parents by design, so a cycle of empty items would never reach a cap
     expressed in those terms — it is the one shape that makes this loop
     non-terminating, and it is reachable by hand from mutable dataclasses.
+
+    Hops bound depth but not breadth, so there is a second, unconditional cap
+    on nodes visited: with shared subtrees the number of root-to-node paths is
+    exponential in depth even with no cycle at all, and 41 objects were shown
+    to produce 2,097,154 lines. Past the cap the walk simply stops. Truncating
+    a note that has already gone insane is the lesser harm; a renderer that
+    does not return takes the transcript down with it.
     """
     if not isinstance(items, (list, tuple)):
         return
 
-    # (item, rendered depth, hops from the root)
-    stack: list[tuple[Any, int, int]] = [(item, 0, 0) for item in reversed(items)]
+    try:
+        # (item, rendered depth, hops from the root)
+        stack: list[tuple[Any, int, int]] = [(item, 0, 0) for item in reversed(items)]
+    except Exception:
+        return
 
+    visited = 0
     while stack:
         item, depth, hops = stack.pop()
         if item is None:
             continue
 
-        text = clean_text(getattr(item, "text", item if isinstance(item, str) else None))
+        visited += 1
+        if visited > _MAX_WALK_NODES:
+            return
+
+        text = clean_text(_safe_getattr(item, "text", item if isinstance(item, str) else None))
         if text:
             yield min(depth, MAX_NEST_DEPTH), text
             child_depth = depth + 1
@@ -165,9 +206,12 @@ def flatten_items(items: Any) -> Iterator[tuple[int, str]]:
 
         if hops >= _MAX_WALK_DEPTH:
             continue
-        children = getattr(item, "children", None)
+        children = _safe_getattr(item, "children")
         if isinstance(children, (list, tuple)):
-            stack.extend((child, child_depth, hops + 1) for child in reversed(children))
+            try:
+                stack.extend((child, child_depth, hops + 1) for child in reversed(children))
+            except Exception:
+                continue
 
 
 def render_section_lines(section: Any) -> list[str]:
@@ -180,12 +224,12 @@ def render_section_lines(section: Any) -> list[str]:
     module only guarantees shape.
     """
     lines: list[str] = []
-    title = clean_text(getattr(section, "title", ""))
+    title = clean_text(_safe_getattr(section, "title", ""))
     if title:
         lines.append(HEADER_PREFIX + title)
 
     prefix = _prefix_for(section)
-    for depth, text in flatten_items(getattr(section, "items", None)):
+    for depth, text in flatten_items(_safe_getattr(section, "items")):
         lines.append(INDENT * depth + prefix + text)
     return lines
 
@@ -207,11 +251,11 @@ def render_note_lines(
     lines: list[str] = []
 
     if include_title:
-        title = clean_text(getattr(note, "title", ""))
+        title = clean_text(_safe_getattr(note, "title", ""))
         if title:
             lines.append(HEADER_PREFIX + title)
 
-    sections = getattr(note, "sections", None)
+    sections = _safe_getattr(note, "sections")
     if not isinstance(sections, (list, tuple)):
         sections = ()
 

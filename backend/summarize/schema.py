@@ -36,12 +36,44 @@ from .templates import DEFAULT_MEETING_TYPE, MeetingTemplate, get_template
 # stack inside a function that promises never to raise.
 _MAX_PARSE_DEPTH = 8
 
+# Total NoteItems one parse may build, across the whole tree. Depth alone does
+# not bound the work when the payload shares references (see _coerce_items);
+# this does, unconditionally. Far above any real note — a model producing 20k
+# bullet points has already failed in a way a cap will not rescue.
+_MAX_PARSE_NODES = 20_000
+
 _VALID_STYLES: frozenset[str] = frozenset(("bullet", "checkbox"))
 _VALID_SPEAKERS: frozenset[str] = frozenset(("me", "them"))
 
 # Fences around JSON are a model habit, not a schema feature, and llm.py may or
 # may not have stripped them before we see the payload.
-_JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+#
+# Deliberately NOT a regex. The obvious pattern here is
+#     r"^\s*```(?:json)?\s*(.*?)\s*```\s*$"
+# and it backtracks cubically when the closing fence is absent: the two
+# unbounded \s* runs either side of the lazy (.*?) each offer O(n) split points.
+# An adversarial pass measured 0.036s at 307 characters growing to 17.3s at
+# 2407 — roughly 8x per doubling — so a 20k-character payload takes hours.
+# That input is not exotic: it is exactly what a model emits when it opens a
+# fence and then hits its token limit. String scanning is O(n) and cannot
+# backtrack.
+_JSON_FENCE = "```"
+_JSON_FENCE_TAG = "json"
+
+
+def _strip_json_fence(payload: str) -> str:
+    """Unwrap ```json ... ``` if both fences are present, else leave it alone."""
+    stripped = payload.strip()
+    if not stripped.startswith(_JSON_FENCE):
+        return payload
+    if len(stripped) < 2 * len(_JSON_FENCE) or not stripped.endswith(_JSON_FENCE):
+        # Unterminated fence. There is nothing well-formed to unwrap, and
+        # guessing at where the body ends would only feed json.loads garbage.
+        return payload
+    body = stripped[len(_JSON_FENCE) : -len(_JSON_FENCE)].lstrip()
+    if body[: len(_JSON_FENCE_TAG)].lower() == _JSON_FENCE_TAG:
+        body = body[len(_JSON_FENCE_TAG) :]
+    return body.strip()
 
 # `t0` sometimes comes back as the literal "[00:12:34]" copied out of the
 # prompt rather than as the number of seconds the schema asked for.
@@ -72,9 +104,7 @@ def _decode(payload: Any) -> Any:
             payload = payload.decode("utf-8", errors="replace")
         except Exception:
             return None
-    fenced = _JSON_FENCE_RE.match(payload)
-    if fenced:
-        payload = fenced.group(1)
+    payload = _strip_json_fence(payload)
     try:
         return json.loads(payload)
     except Exception:
@@ -95,7 +125,13 @@ def _coerce_text(value: Any) -> str:
     if isinstance(value, (int, float)):
         if isinstance(value, float) and not math.isfinite(value):
             return ""
-        return str(value).strip()
+        try:
+            return str(value).strip()
+        except Exception:
+            # str() of an int is not total: CPython caps int->str conversion at
+            # 4300 digits and raises ValueError past it. This module promises
+            # never to raise, so an absurd number becomes no content.
+            return ""
     return ""
 
 
@@ -108,8 +144,14 @@ def _coerce_style(value: Any) -> Optional[SectionStyle]:
     return None
 
 
-def _coerce_item(value: Any, depth: int) -> Optional[NoteItem]:
+def _coerce_item(value: Any, depth: int, budget: Optional[list] = None) -> Optional[NoteItem]:
     """Build one NoteItem, or None when there is nothing worth keeping."""
+    if budget is None:
+        budget = [_MAX_PARSE_NODES]
+    if budget[0] <= 0:
+        return None
+    budget[0] -= 1
+
     if isinstance(value, str) or isinstance(value, (int, float)):
         text = _coerce_text(value)
         return NoteItem(text=text) if text else None
@@ -118,7 +160,7 @@ def _coerce_item(value: Any, depth: int) -> Optional[NoteItem]:
         text = _coerce_text(value.get("text"))
         children: list[NoteItem] = []
         if depth < _MAX_PARSE_DEPTH:
-            children = _coerce_items(value.get("children"), depth + 1)
+            children = _coerce_items(value.get("children"), depth + 1, budget)
         if not text and not children:
             return None
         return NoteItem(text=text, children=children)
@@ -126,20 +168,35 @@ def _coerce_item(value: Any, depth: int) -> Optional[NoteItem]:
     return None
 
 
-def _coerce_items(value: Any, depth: int = 0) -> list[NoteItem]:
-    """Coerce an `items`/`children` field that may be anything at all."""
-    if value is None:
+def _coerce_items(value: Any, depth: int = 0, budget: Optional[list] = None) -> list[NoteItem]:
+    """
+    Coerce an `items`/`children` field that may be anything at all.
+
+    `budget` is a one-element list used as a shared mutable counter across the
+    whole parse. Depth alone does NOT bound the work: a payload whose children
+    list contains the node that owns it materialises fan-out**_MAX_PARSE_DEPTH
+    objects, and an adversarial pass reached 6.5e12 (fan-out 40) — parse_note
+    never returned and memory climbed without bound. json.loads cannot build
+    that sharing, so this is unreachable from a model response, but the
+    no-raise/always-returns promise should not quietly depend on who the caller
+    is.
+    """
+    if budget is None:
+        budget = [_MAX_PARSE_NODES]
+    if value is None or budget[0] <= 0:
         return []
     if isinstance(value, (str, int, float, dict)):
         # A single item where an array was specified.
-        single = _coerce_item(value, depth)
+        single = _coerce_item(value, depth, budget)
         return [single] if single is not None else []
     if not isinstance(value, (list, tuple)):
         return []
 
     items: list[NoteItem] = []
     for entry in value:
-        item = _coerce_item(entry, depth)
+        if budget[0] <= 0:
+            break
+        item = _coerce_item(entry, depth, budget)
         if item is not None:
             items.append(item)
     return items
@@ -260,7 +317,12 @@ def _coerce_seconds(value: Any) -> float:
     if isinstance(value, bool) or value is None:
         return 0.0
     if isinstance(value, (int, float)):
-        seconds = float(value)
+        try:
+            seconds = float(value)
+        except Exception:
+            # float() of a sufficiently large int raises OverflowError. This
+            # module promises never to raise, so an absurd stamp becomes 0.
+            return 0.0
         return seconds if math.isfinite(seconds) and seconds > 0 else 0.0
     if isinstance(value, str):
         text = value.strip()
