@@ -195,11 +195,16 @@ def note_json_schema(
     slightly off-menu title: a coffee chat should be free to emit "Their
     Background" without also emitting an empty "Action Items".
 
-    `style` is likewise a hint the renderer may override — the template owns
-    which sections are checkbox-style, not the model. It is deliberately absent
-    from `required`, and the Phase 0 smoke test confirms models simply omit it,
-    so parsing MUST treat a missing `style` as the normal case rather than an
-    error, and fall back to the template's choice.
+    `style` is likewise a hint, not a decision. It is deliberately absent from
+    `required`, and the Phase 0 smoke test confirms models simply omit it, so
+    parsing MUST treat a missing `style` as the normal case rather than an
+    error.
+
+    Precedence, when the model does supply one: the template wins wherever it
+    has a POSITIVE opinion, since "checkbox" encodes real knowledge about the
+    title while "bullet" is only its fallback for a title it does not
+    recognise. An explicit model style is honoured otherwise, so a section the
+    template's keyword list never anticipated can still render as commitments.
     """
     title_hint = (
         f" Typical titles for this kind of meeting: {', '.join(suggested_titles)}."

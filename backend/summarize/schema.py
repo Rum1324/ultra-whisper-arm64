@@ -225,7 +225,13 @@ def _coerce_section(
 
     model_style = _coerce_style(value.get("style"))
     template_style = template.style_for(title)
-    if model_style is None or prefer_template_style:
+    if prefer_template_style or model_style is None or template_style == "checkbox":
+        # The template wins wherever it has a POSITIVE opinion, because
+        # "checkbox" is knowledge (this title names commitments) while "bullet"
+        # is merely its default for a title it does not recognise. Neither
+        # extreme is right: template-always ignores a model correctly marking a
+        # section the keyword list never anticipated, and model-always lets
+        # model noise overrule knowledge the template actually has.
         style: SectionStyle = template_style
     else:
         style = model_style

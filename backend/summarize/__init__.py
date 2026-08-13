@@ -9,6 +9,11 @@ reached over localhost HTTP with `urllib`.
 its docstring before changing anything in it.
 """
 
+from .chunker import (
+    DEFAULT_OVERLAP_RATIO,
+    DEFAULT_WINDOW_BUDGET_CHARS,
+    chunk_transcript,
+)
 from .contracts import (
     BULLET_PREFIX,
     CHECKBOX_PREFIX,
@@ -31,10 +36,17 @@ from .contracts import (
     render_segment,
     render_window,
 )
+from .llm import OllamaStatus, chat_json, probe
+from .render import render_note, render_note_lines
+from .schema import parse_facts, parse_note
+from .templates import DEFAULT_MEETING_TYPE, MeetingTemplate, get_template, note_schema_for
 
 __all__ = [
     "BULLET_PREFIX",
     "CHECKBOX_PREFIX",
+    "DEFAULT_MEETING_TYPE",
+    "DEFAULT_OVERLAP_RATIO",
+    "DEFAULT_WINDOW_BUDGET_CHARS",
     "FACTS_JSON_SCHEMA",
     "HEADER_PREFIX",
     "INDENT",
@@ -42,15 +54,26 @@ __all__ = [
     "SPEAKER_LABELS",
     "Fact",
     "MeetingNote",
+    "MeetingTemplate",
     "NoteItem",
     "NoteSection",
+    "OllamaStatus",
     "SectionStyle",
     "Segment",
     "Speaker",
     "TranscriptWindow",
     "Unavailable",
+    "chat_json",
+    "chunk_transcript",
     "format_timestamp",
+    "get_template",
     "note_json_schema",
+    "note_schema_for",
+    "parse_facts",
+    "parse_note",
+    "probe",
+    "render_note",
+    "render_note_lines",
     "render_segment",
     "render_window",
 ]
