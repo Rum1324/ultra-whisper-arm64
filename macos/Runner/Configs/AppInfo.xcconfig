@@ -14,4 +14,4 @@ PRODUCT_BUNDLE_IDENTIFIER = com.ultrawhisper.ultrawhisper
 PRODUCT_COPYRIGHT = Copyright © 2025 com.glassywhisper. All rights reserved.
 
 // Minimum macOS deployment target
-MACOSX_DEPLOYMENT_TARGET = 11.0
+MACOSX_DEPLOYMENT_TARGET = 14.4

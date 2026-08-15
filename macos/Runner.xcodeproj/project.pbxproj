@@ -25,6 +25,8 @@
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		AA1234567890ABCD12345678 /* KeystrokeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1234567890ABCD12345679 /* KeystrokeHandler.swift */; };
+		A1F08523800042038A528010 /* AudioTapController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5DA2A5A0CE146C588EC8B9E /* AudioTapController.swift */; };
+		77BDDA677E224D28AC253581 /* AudioTapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1360A974F97E4270B683BB27 /* AudioTapHandler.swift */; };
 		734E1CC7523941398B230BD8 /* VolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F762538C2B4B7083AF09E6 /* VolumeController.swift */; };
 		C62D6CD9CC5345789244BC0E /* VolumeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A541FA6810428EAB507182 /* VolumeHandler.swift */; };
 		BB2345678901BCDE23456789 /* AppLifecycleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2345678901BCDE23456790 /* AppLifecycleHandler.swift */; };
@@ -75,6 +77,8 @@
 		33CC10ED2044A3C60003C045 /* UltraWhisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UltraWhisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AA1234567890ABCD12345679 /* KeystrokeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeHandler.swift; sourceTree = "<group>"; };
+		D5DA2A5A0CE146C588EC8B9E /* AudioTapController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTapController.swift; sourceTree = "<group>"; };
+		1360A974F97E4270B683BB27 /* AudioTapHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTapHandler.swift; sourceTree = "<group>"; };
 		55F762538C2B4B7083AF09E6 /* VolumeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeController.swift; sourceTree = "<group>"; };
 		F1A541FA6810428EAB507182 /* VolumeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeHandler.swift; sourceTree = "<group>"; };
 		BB2345678901BCDE23456790 /* AppLifecycleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycleHandler.swift; sourceTree = "<group>"; };
@@ -201,6 +205,8 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				AA1234567890ABCD12345679 /* KeystrokeHandler.swift */,
+				D5DA2A5A0CE146C588EC8B9E /* AudioTapController.swift */,
+				1360A974F97E4270B683BB27 /* AudioTapHandler.swift */,
 				55F762538C2B4B7083AF09E6 /* VolumeController.swift */,
 				F1A541FA6810428EAB507182 /* VolumeHandler.swift */,
 				BB2345678901BCDE23456790 /* AppLifecycleHandler.swift */,
@@ -470,6 +476,8 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				AA1234567890ABCD12345678 /* KeystrokeHandler.swift in Sources */,
+				A1F08523800042038A528010 /* AudioTapController.swift in Sources */,
+				77BDDA677E224D28AC253581 /* AudioTapHandler.swift in Sources */,
 				734E1CC7523941398B230BD8 /* VolumeController.swift in Sources */,
 				C62D6CD9CC5345789244BC0E /* VolumeHandler.swift in Sources */,
 				BB2345678901BCDE23456789 /* AppLifecycleHandler.swift in Sources */,
@@ -592,7 +600,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.14;
+				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -674,7 +682,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.14;
+				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -724,7 +732,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.14;
+				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;

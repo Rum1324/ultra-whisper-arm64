@@ -33,6 +33,22 @@ class AppDelegate: FlutterAppDelegate {
       VolumeHandler.handleMethodCall(call: call, result: result)
     })
 
+    // Meeting capture: per-process system audio and microphone activity.
+    let micActivityChannel = FlutterMethodChannel(name: "com.ultrawhisper.mic_activity",
+                                                 binaryMessenger: controller.engine.binaryMessenger)
+
+    micActivityChannel.setMethodCallHandler({
+      (call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
+      AudioTapHandler.handleMethodCall(call: call, result: result)
+    })
+
+    // Events flow back on their own channel, as with statusBarEventChannel:
+    // captured PCM, mic activity changes, and the silent-capture warning.
+    AudioTapHandler.eventChannel = FlutterMethodChannel(
+      name: "com.ultrawhisper.mic_activity_events",
+      binaryMessenger: controller.engine.binaryMessenger
+    )
+
     // Attempt to restore volume on launch (crash recovery)
     VolumeController.restoreVolumeOnLaunch()
 
