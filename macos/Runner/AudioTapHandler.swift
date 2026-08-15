@@ -59,6 +59,9 @@ class AudioTapHandler {
         case "listAudioProcesses":
             result(AudioTapController.listProcesses().map(\.asDictionary))
 
+        case "preflightAudioPermission":
+            result(sharedController().preflightPermission())
+
         case "startSystemCapture":
             guard let args = call.arguments as? [String: Any],
                   let pids = args["pids"] as? [Int], !pids.isEmpty else {

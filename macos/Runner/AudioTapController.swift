@@ -143,6 +143,37 @@ final class AudioTapController {
         }
     }
 
+    // MARK: - Permission preflight
+
+    /// Create and immediately destroy a tap, to surface the System Audio
+    /// Recording permission prompt without recording anything.
+    ///
+    /// Worth doing early rather than at the start of a meeting. A missing
+    /// permission does not fail the capture — it yields digital silence — so
+    /// without a preflight the first symptom is an empty "them" track
+    /// discovered after the call is over and the audio is gone. Asking up
+    /// front turns an unrecoverable failure into a question.
+    ///
+    /// Returns whether the tap could be created at all. That is NOT proof of
+    /// authorization: macOS hands back a working tap and silent audio when the
+    /// permission is denied, so only `onSilenceSuspected` during a real capture
+    /// can tell those apart. Creation failing, though, is conclusive.
+    @discardableResult
+    func preflightPermission() -> Bool {
+        let description = CATapDescription(monoGlobalTapButExcludeProcesses: [])
+        description.name = "UltraWhisper Permission Check"
+        description.isPrivate = true
+        description.muteBehavior = .unmuted
+
+        var probeID = AudioObjectID(kAudioObjectUnknown)
+        let status = AudioHardwareCreateProcessTap(description, &probeID)
+        if probeID != AudioObjectID(kAudioObjectUnknown) {
+            AudioHardwareDestroyProcessTap(probeID)
+        }
+        NSLog("AudioTapController: permission preflight status=\(status)")
+        return status == noErr
+    }
+
     // MARK: - Capture
 
     func startCapture(processObjectIDs: [AudioObjectID]) throws {

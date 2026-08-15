@@ -15,6 +15,7 @@ import '../models/settings.dart';
 import '../models/websocket_messages.dart';
 import '../utils/logger.dart';
 import 'audio_service.dart';
+import 'mic_activity_service.dart';
 import 'settings_service.dart';
 import 'backend_service.dart';
 import 'hotkey_service.dart';
@@ -36,6 +37,11 @@ class AppService extends ChangeNotifier {
   final SettingsWindowService _settingsWindowService;
   final VolumeControlService _volumeControlService;
   final StatusBarService _statusBarService;
+
+  // Owned rather than injected: it has no dependencies of its own, and keeping
+  // it out of the constructor avoids threading meeting capture through every
+  // existing call site while the feature is still being built.
+  final MicActivityService _micActivityService = MicActivityService();
 
   final _uuid = const Uuid();
 
@@ -142,6 +148,32 @@ class AppService extends ChangeNotifier {
       // Initialize hotkeys
       AppLogger.debug('Setting up hotkeys...');
       await _setupHotkeys();
+
+      // Ask for System Audio Recording up front, before any meeting exists.
+      //
+      // A denied tap does not fail — macOS returns digital silence — so without
+      // asking here the first symptom would be an empty "them" track found
+      // after the call, when the audio is already gone. Never fatal: meeting
+      // capture is an extra on top of dictation, which must work regardless.
+      AppLogger.debug('Preflighting system audio permission...');
+      final audioTapReady = await _micActivityService.preflightPermission();
+      AppLogger.info('System audio tap available: $audioTapReady');
+      _micActivityService.startListening();
+
+      // Opt-in diagnostic: ULTRAWHISPER_TAP_SELFTEST=1 captures a few seconds
+      // from whatever is playing and reports whether real samples arrive. Only
+      // an actual capture can distinguish a granted permission from a denied
+      // one, since both produce a working tap.
+      if (Platform.environment['ULTRAWHISPER_TAP_SELFTEST'] == '1') {
+        // Deliberately print rather than AppLogger: AppLogger is gated on
+        // kDebugMode, and this diagnostic is only ever useful against a RELEASE
+        // build, where the permission behaviour it probes actually applies.
+        // ignore: avoid_print
+        print('TAP-SELFTEST: preflight=$audioTapReady, capturing...');
+        final verdict = await _micActivityService.runSelfTest();
+        // ignore: avoid_print
+        print('TAP-SELFTEST: $verdict');
+      }
 
       // Initialize backend
       AppLogger.debug('Initializing backend...');
