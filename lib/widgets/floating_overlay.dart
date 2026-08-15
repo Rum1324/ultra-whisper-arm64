@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
@@ -18,12 +17,6 @@ class _FloatingOverlayState extends State<FloatingOverlay>
   final List<double> _waveformHeights = List.generate(32, (index) => 0.1);
   final List<double> _frequencyBands = List.generate(8, (index) => 0.1);
   final List<double> _peakHeights = List.generate(32, (index) => 0.1);
-
-  // Audio analysis parameters
-  final int _sampleRate = 16000;
-  final int _fftSize = 256;
-  final List<double> _audioBuffer = [];
-  final int _bufferSize = 1024;
 
   @override
   void initState() {
