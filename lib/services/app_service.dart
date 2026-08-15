@@ -398,6 +398,7 @@ class AppService extends ChangeNotifier {
         await _volumeControlService.duckVolumeForRecording(
           percentage: _settings.volumeDuckPercentage,
           persistent: true,
+          skipWhenBluetooth: _settings.skipDuckWhenBluetooth,
         );
       }
 

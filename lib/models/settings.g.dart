@@ -12,6 +12,7 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   duckVolumeDuringRecording: json['duckVolumeDuringRecording'] as bool? ?? true,
   volumeDuckPercentage:
       (json['volumeDuckPercentage'] as num?)?.toDouble() ?? 0.1,
+  skipDuckWhenBluetooth: json['skipDuckWhenBluetooth'] as bool? ?? true,
   modelStoragePath: json['modelStoragePath'] as String? ?? '',
   toggleRecordHotkey: json['toggleRecordHotkey'] as String? ?? '⌥⇧R',
   toggleRecordEnterHotkey: json['toggleRecordEnterHotkey'] as String? ?? '⌥⇧E',
@@ -43,6 +44,7 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'chunkSizeMs': instance.chunkSizeMs,
   'duckVolumeDuringRecording': instance.duckVolumeDuringRecording,
   'volumeDuckPercentage': instance.volumeDuckPercentage,
+  'skipDuckWhenBluetooth': instance.skipDuckWhenBluetooth,
   'modelStoragePath': instance.modelStoragePath,
   'toggleRecordHotkey': instance.toggleRecordHotkey,
   'toggleRecordEnterHotkey': instance.toggleRecordEnterHotkey,

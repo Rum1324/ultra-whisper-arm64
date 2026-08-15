@@ -1,6 +1,27 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 
+/// Snapshot of the system's default audio output device.
+class OutputDeviceInfo {
+  /// Human-readable device name, or an empty string if it could not be read.
+  final String name;
+
+  /// CoreAudio transport type constant (kAudioDeviceTransportType*).
+  final int transportType;
+
+  /// True when the device is connected over Bluetooth or Bluetooth LE.
+  final bool isBluetooth;
+
+  const OutputDeviceInfo({
+    required this.name,
+    required this.transportType,
+    required this.isBluetooth,
+  });
+
+  /// Name for display, falling back to a generic label for unnamed devices.
+  String get displayName => name.isEmpty ? 'Unknown device' : name;
+}
+
 class VolumeControlService {
   static const MethodChannel _channel = MethodChannel('com.ultrawhisper.volume');
 
@@ -24,6 +45,27 @@ class VolumeControlService {
     } catch (e) {
       debugPrint('VolumeControlService: Failed to set volume: $e');
       rethrow;
+    }
+  }
+
+  /// Describe the current default output device.
+  ///
+  /// Returns null if the device could not be inspected — callers should treat
+  /// that as "unknown" and fall back to their default behaviour.
+  Future<OutputDeviceInfo?> getOutputDeviceInfo() async {
+    try {
+      final Map<Object?, Object?>? info =
+          await _channel.invokeMethod('getOutputDeviceInfo');
+      if (info == null) return null;
+
+      return OutputDeviceInfo(
+        name: info['name'] as String? ?? '',
+        transportType: info['transportType'] as int? ?? 0,
+        isBluetooth: info['isBluetooth'] as bool? ?? false,
+      );
+    } catch (e) {
+      debugPrint('VolumeControlService: Failed to get output device info: $e');
+      return null;
     }
   }
 
@@ -57,10 +99,25 @@ class VolumeControlService {
   ///
   /// [percentage] - The percentage to reduce volume to (0.0 to 1.0, default 0.1 = 10%)
   /// [persistent] - Whether to save state for crash recovery (default true)
+  /// [skipWhenBluetooth] - Skip ducking entirely when the output device is on a
+  ///   Bluetooth transport. Audio played through headphones never reaches the
+  ///   microphone, so there is nothing to duck. If the device cannot be
+  ///   inspected we duck anyway, preserving the previous behaviour.
   Future<void> duckVolumeForRecording({
     required double percentage,
     bool persistent = true,
+    bool skipWhenBluetooth = false,
   }) async {
+    if (skipWhenBluetooth) {
+      final device = await getOutputDeviceInfo();
+      if (device != null && device.isBluetooth) {
+        debugPrint(
+          'VolumeControlService: Skipping duck — Bluetooth output "${device.displayName}"',
+        );
+        return;
+      }
+    }
+
     try {
       await _channel.invokeMethod('duckVolume', {
         'percentage': percentage,

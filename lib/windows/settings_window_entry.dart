@@ -312,6 +312,29 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           ),
 
           if (_settings.duckVolumeDuringRecording) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 24.0),
+              child: CheckboxListTile(
+                title: const Text(
+                  'Skip when Bluetooth headphones are connected',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  "System audio can't bleed into the mic through headphones. "
+                  'Turn this off if you use a Bluetooth speaker.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                value: _settings.skipDuckWhenBluetooth,
+                onChanged: (value) {
+                  _updateSettings(_settings.copyWith(
+                    skipDuckWhenBluetooth: value ?? true,
+                  ));
+                },
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+            ),
+
             const SizedBox(height: 16),
             _buildLabel('Volume level during recording'),
             const SizedBox(height: 8),

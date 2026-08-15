@@ -15,6 +15,9 @@ class Settings {
   final int chunkSizeMs;
   final bool duckVolumeDuringRecording;
   final double volumeDuckPercentage;
+  /// Skip ducking when the output device is on a Bluetooth transport — audio
+  /// through headphones cannot bleed into the microphone.
+  final bool skipDuckWhenBluetooth;
 
   // Model settings
   final String modelStoragePath;
@@ -45,6 +48,7 @@ class Settings {
     this.chunkSizeMs = 30,
     this.duckVolumeDuringRecording = true,
     this.volumeDuckPercentage = 0.1,
+    this.skipDuckWhenBluetooth = true,
 
     this.modelStoragePath = '',
 
@@ -74,6 +78,7 @@ class Settings {
     int? chunkSizeMs,
     bool? duckVolumeDuringRecording,
     double? volumeDuckPercentage,
+    bool? skipDuckWhenBluetooth,
     String? modelStoragePath,
     String? toggleRecordHotkey,
     String? toggleRecordEnterHotkey,
@@ -94,6 +99,7 @@ class Settings {
       chunkSizeMs: chunkSizeMs ?? this.chunkSizeMs,
       duckVolumeDuringRecording: duckVolumeDuringRecording ?? this.duckVolumeDuringRecording,
       volumeDuckPercentage: volumeDuckPercentage ?? this.volumeDuckPercentage,
+      skipDuckWhenBluetooth: skipDuckWhenBluetooth ?? this.skipDuckWhenBluetooth,
       modelStoragePath: modelStoragePath ?? this.modelStoragePath,
       toggleRecordHotkey: toggleRecordHotkey ?? this.toggleRecordHotkey,
       toggleRecordEnterHotkey: toggleRecordEnterHotkey ?? this.toggleRecordEnterHotkey,

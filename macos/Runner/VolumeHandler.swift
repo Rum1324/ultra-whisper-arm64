@@ -18,6 +18,9 @@ class VolumeHandler {
             }
             setVolume(volume: Float32(volume), result: result)
 
+        case "getOutputDeviceInfo":
+            getOutputDeviceInfo(result: result)
+
         case "isMuted":
             checkMuted(result: result)
 
@@ -65,6 +68,21 @@ class VolumeHandler {
         do {
             try VolumeController.setVolume(volume)
             result(nil)
+        } catch {
+            result(FlutterError(code: "VOLUME_ERROR",
+                              message: error.localizedDescription,
+                              details: nil))
+        }
+    }
+
+    private static func getOutputDeviceInfo(result: @escaping FlutterResult) {
+        do {
+            let info = try VolumeController.getOutputDeviceInfo()
+            result([
+                "name": info.name,
+                "transportType": Int(info.transportType),
+                "isBluetooth": info.isBluetooth,
+            ])
         } catch {
             result(FlutterError(code: "VOLUME_ERROR",
                               message: error.localizedDescription,

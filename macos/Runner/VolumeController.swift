@@ -49,6 +49,80 @@ class VolumeController {
         return deviceID
     }
 
+    /// Describes the current default output device.
+    struct OutputDeviceInfo {
+        let name: String
+        let transportType: UInt32
+        let isBluetooth: Bool
+    }
+
+    /// Get the name and transport type of the default output device.
+    ///
+    /// Used to decide whether ducking is worth doing: audio played through Bluetooth
+    /// headphones never reaches the microphone, so there is nothing to duck.
+    static func getOutputDeviceInfo() throws -> OutputDeviceInfo {
+        let deviceID = try getDefaultOutputDevice()
+
+        var transportType = UInt32(0)
+        var transportSize = UInt32(MemoryLayout<UInt32>.size)
+
+        var transportAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let transportStatus = AudioObjectGetPropertyData(
+            deviceID,
+            &transportAddress,
+            0,
+            nil,
+            &transportSize,
+            &transportType
+        )
+
+        guard transportStatus == noErr else {
+            throw VolumeError.failedToGetTransportType(status: transportStatus)
+        }
+
+        let isBluetooth = transportType == kAudioDeviceTransportTypeBluetooth
+            || transportType == kAudioDeviceTransportTypeBluetoothLE
+
+        return OutputDeviceInfo(
+            name: deviceName(for: deviceID),
+            transportType: transportType,
+            isBluetooth: isBluetooth
+        )
+    }
+
+    /// Best-effort device name. Used for logging and UI hints only, so failure
+    /// yields an empty string rather than an error.
+    private static func deviceName(for deviceID: AudioDeviceID) -> String {
+        var name: Unmanaged<CFString>?
+        var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyName,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &nameSize,
+            &name
+        )
+
+        guard status == noErr, let cfName = name?.takeRetainedValue() else {
+            return ""
+        }
+
+        return cfName as String
+    }
+
     /// Get current system volume (0.0 to 1.0)
     static func getCurrentVolume() throws -> Float32 {
         let deviceID = try getDefaultOutputDevice()
@@ -333,6 +407,7 @@ class VolumeController {
     enum VolumeError: Error, LocalizedError {
         case failedToGetDevice(status: OSStatus)
         case noOutputDevice
+        case failedToGetTransportType(status: OSStatus)
         case failedToGetVolume(status: OSStatus)
         case failedToSetVolume(status: OSStatus)
         case failedToGetMuteState(status: OSStatus)
@@ -346,6 +421,8 @@ class VolumeController {
                 return "Failed to get output device (status: \(status))"
             case .noOutputDevice:
                 return "No output device available"
+            case .failedToGetTransportType(let status):
+                return "Failed to get output device transport type (status: \(status))"
             case .failedToGetVolume(let status):
                 return "Failed to get volume (status: \(status))"
             case .failedToSetVolume(let status):
