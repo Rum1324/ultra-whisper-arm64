@@ -72,15 +72,23 @@ class BackendService {
         // Try to find and kill Python processes that might be our backend
         if (Platform.isMacOS) {
           try {
-            // Find processes using the port
-            final result = await Process.run('lsof', ['-i', ':$_backendPort', '-t']);
+            // Find processes actually listening on the port (excludes sockets
+            // that merely reference it, e.g. our own outbound probe connection
+            // from _isPortInUse, which would otherwise show up in TIME_WAIT).
+            final result = await Process.run('lsof', ['-i', ':$_backendPort', '-sTCP:LISTEN', '-t']);
             if (result.exitCode == 0 && result.stdout.toString().trim().isNotEmpty) {
               final pids = result.stdout.toString().trim().split('\n');
-              for (final pid in pids) {
-                if (pid.trim().isNotEmpty) {
-                  AppLogger.debug('Killing orphaned process with PID: $pid');
-                  await Process.run('kill', ['-9', pid.trim()]);
+              final myPid = pid;
+              for (final pidStr in pids) {
+                final trimmed = pidStr.trim();
+                if (trimmed.isEmpty) continue;
+                final candidatePid = int.tryParse(trimmed);
+                if (candidatePid == null || candidatePid == myPid) {
+                  AppLogger.warning('Skipping cleanup kill for suspicious/self PID: $trimmed');
+                  continue;
                 }
+                AppLogger.debug('Killing orphaned process with PID: $trimmed');
+                await Process.run('kill', ['-9', trimmed]);
               }
 
               // Wait a moment for the port to be released
