@@ -2,6 +2,99 @@ import AVFoundation
 import AppKit
 import CoreAudio
 import Foundation
+import ScreenCaptureKit
+
+/// ScreenCaptureKit fallback for system audio.
+///
+/// Core Audio process taps are the better fit in principle — genuinely
+/// per-process, and a narrower permission — but on this machine they return
+/// correctly-sized buffers of digital silence under every configuration tried,
+/// including a global tap, with a Developer ID signature, hardened runtime, the
+/// audio-input entitlement and both privacy grants in place.
+///
+/// ScreenCaptureKit is what every shipping system-audio capture on macOS
+/// actually uses (and what the audio_toolkit Flutter plugin requires macOS 13
+/// for, which is below the 14.2 taps floor). Its audio is display-scoped rather
+/// than process-scoped, so the "them" track can pick up notification sounds and
+/// other media — a real cost, and much smaller than not capturing at all.
+@available(macOS 13.0, *)
+final class ScreenCaptureAudioProbe: NSObject, SCStreamOutput {
+    private var stream: SCStream?
+    private(set) var peak: Float = 0
+    private(set) var bytes = 0
+    private let lock = NSLock()
+
+    /// Whether screen-capture access is currently authorized.
+    ///
+    /// Unlike Core Audio taps — which are created happily and then hand back
+    /// silence when denied — this can be asked directly. It is the only
+    /// trustworthy permission signal available for system audio.
+    static func isAuthorized() -> Bool { CGPreflightScreenCaptureAccess() }
+
+    /// Ask the system to prompt. Returns immediately; the grant only takes
+    /// effect on the NEXT launch, which is macOS behaviour, not a bug here.
+    @discardableResult
+    static func requestAuthorization() -> Bool { CGRequestScreenCaptureAccess() }
+
+    /// Capture briefly and report the loudest sample seen.
+    func measure(seconds: Double) async throws -> (peak: Float, bytes: Int) {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: false)
+        guard let display = content.displays.first else {
+            throw NSError(domain: "sck", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "No display to capture from."])
+        }
+
+        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        let config = SCStreamConfiguration()
+        config.capturesAudio = true
+        config.sampleRate = 48_000
+        config.channelCount = 1
+        // Our own output would otherwise feed back into the recording.
+        config.excludesCurrentProcessAudio = true
+        // Smallest legal video capture; SCK still wants a video configuration
+        // even when only the audio is wanted.
+        config.width = 2
+        config.height = 2
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+
+        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+        self.stream = stream
+
+        try await stream.startCapture()
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        try? await stream.stopCapture()
+        self.stream = nil
+
+        lock.lock(); defer { lock.unlock() }
+        return (peak, bytes)
+    }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+                of type: SCStreamOutputType) {
+        guard type == .audio,
+              let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+        var length = 0
+        var pointer: UnsafeMutablePointer<Int8>?
+        guard CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: nil,
+                                          totalLengthOut: &length, dataPointerOut: &pointer) == noErr,
+              let pointer, length > 0 else { return }
+
+        let count = length / MemoryLayout<Float>.size
+        var localPeak: Float = 0
+        pointer.withMemoryRebound(to: Float.self, capacity: count) { floats in
+            for index in 0..<count {
+                let magnitude = abs(floats[index])
+                if magnitude > localPeak { localPeak = magnitude }
+            }
+        }
+        lock.lock()
+        bytes += length
+        if localPeak > peak { peak = localPeak }
+        lock.unlock()
+    }
+}
 
 /// Per-process system-audio capture, plus microphone activity detection.
 ///

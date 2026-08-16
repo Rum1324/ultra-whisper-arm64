@@ -164,15 +164,43 @@ class AppService extends ChangeNotifier {
       // from whatever is playing and reports whether real samples arrive. Only
       // an actual capture can distinguish a granted permission from a denied
       // one, since both produce a working tap.
-      if (Platform.environment['ULTRAWHISPER_TAP_SELFTEST'] == '1') {
-        // Deliberately print rather than AppLogger: AppLogger is gated on
-        // kDebugMode, and this diagnostic is only ever useful against a RELEASE
-        // build, where the permission behaviour it probes actually applies.
+      // Opt-in diagnostic, triggered by either an env var or a sentinel file.
+      //
+      // The sentinel exists because the app MUST be launched via `open` for this
+      // to mean anything: TCC attributes a permission request to the
+      // "responsible process", which for a shell-launched binary is the shell,
+      // not the app — so a shell launch is denied no matter what the user
+      // granted. And `open` discards stdout, hence writing the result to a file
+      // rather than printing it.
+      final sentinel = File(
+        '${Platform.environment['HOME']}/.ultrawhisper_tap_selftest',
+      );
+      if (Platform.environment['ULTRAWHISPER_TAP_SELFTEST'] == '1' ||
+          sentinel.existsSync()) {
+        // A pid written into the sentinel narrows the test to one process.
+        final wanted = int.tryParse(
+          sentinel.existsSync() ? sentinel.readAsStringSync().trim() : '',
+        );
+        // Step by step, most conclusive signal first.
+        final authed = await _micActivityService.screenCaptureAuthorized();
+        if (!authed) {
+          await _micActivityService.requestScreenCaptureAccess();
+        }
+        final verdict = await _micActivityService.runSelfTest(onlyPid: wanted);
+        final sck = await _micActivityService.measureScreenCaptureKit();
+        final line = '[1] screenCaptureAuthorized=$authed\n'
+            '[2] tapPreflightCreated=$audioTapReady\n'
+            '[3] tap $verdict\n'
+            '[4] $sck';
         // ignore: avoid_print
-        print('TAP-SELFTEST: preflight=$audioTapReady, capturing...');
-        final verdict = await _micActivityService.runSelfTest();
-        // ignore: avoid_print
-        print('TAP-SELFTEST: $verdict');
+        print('TAP-SELFTEST: $line');
+        try {
+          File('${Platform.environment['HOME']}/.ultrawhisper_tap_selftest.result')
+              .writeAsStringSync('${DateTime.now().toIso8601String()}  $line\n');
+        } catch (_) {
+          // A diagnostic that cannot write its result is still not worth
+          // taking the app down for.
+        }
       }
 
       // Initialize backend

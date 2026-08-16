@@ -82,11 +82,21 @@ class MicActivityService {
   /// is created happily and then returns digital silence. The only way to know
   /// the permission actually works is to point it at a process that IS making
   /// noise and look at the samples. Env-gated, so it never runs in normal use.
-  Future<String> runSelfTest({Duration duration = const Duration(seconds: 5)}) async {
+  Future<String> runSelfTest({
+    Duration duration = const Duration(seconds: 5),
+    int? onlyPid,
+  }) async {
     final processes = await listAudioProcesses();
     if (processes.isEmpty) return 'no audio processes visible';
 
-    final playing = processes.where((p) => p['runningOutput'] == true).toList();
+    var playing = processes.where((p) => p['runningOutput'] == true).toList();
+    if (onlyPid != null) {
+      // Tapping one known-good process rather than everything that happens to
+      // be playing. A mixdown spanning several processes cannot show which of
+      // them contributed, and a protected one could plausibly zero the mix.
+      playing = processes.where((p) => p['pid'] == onlyPid).toList();
+      if (playing.isEmpty) return 'pid $onlyPid is not a known audio process';
+    }
     if (playing.isEmpty) {
       return 'nothing is playing audio right now — start some audio and retry';
     }
@@ -122,6 +132,46 @@ class MicActivityService {
         : 'SILENT — created and delivered $bytes bytes of zeroes, '
             'which is what a denied System Audio Recording permission looks like';
     return 'tapped $names: $bytes bytes, peak |sample| = $peak of 32767 → $verdict';
+  }
+
+  /// Whether screen-capture access is authorized right now.
+  ///
+  /// The only trustworthy permission signal for system audio: Core Audio taps
+  /// cannot be asked, they just return silence when denied.
+  Future<bool> screenCaptureAuthorized() async {
+    try {
+      return await _channel.invokeMethod<bool>('screenCaptureAuthorized') ?? false;
+    } catch (e) {
+      AppLogger.warning('screenCaptureAuthorized failed: $e');
+      return false;
+    }
+  }
+
+  /// Trigger the system prompt. The grant only applies from the next launch.
+  Future<bool> requestScreenCaptureAccess() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestScreenCaptureAccess') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Measure whether the ScreenCaptureKit path hears anything, as a control
+  /// against the Core Audio tap path returning silence.
+  Future<String> measureScreenCaptureKit({double seconds = 5}) async {
+    try {
+      final r = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'measureScreenCaptureKitAudio',
+        {'seconds': seconds},
+      );
+      if (r == null) return 'no result';
+      final peak = (r['peak'] as num?)?.toDouble() ?? 0;
+      final bytes = r['bytes'] ?? 0;
+      return 'SCK: $bytes bytes, peak=${peak.toStringAsFixed(6)} → '
+          '${peak > 0.0001 ? "AUDIO PRESENT" : "silent"}';
+    } catch (e) {
+      return 'SCK failed: $e';
+    }
   }
 
   /// Every process Core Audio knows about. A process only appears once it has

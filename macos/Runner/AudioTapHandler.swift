@@ -62,6 +62,29 @@ class AudioTapHandler {
         case "preflightAudioPermission":
             result(sharedController().preflightPermission())
 
+        case "screenCaptureAuthorized":
+            result(ScreenCaptureAudioProbe.isAuthorized())
+
+        case "requestScreenCaptureAccess":
+            result(ScreenCaptureAudioProbe.requestAuthorization())
+
+        case "measureScreenCaptureKitAudio":
+            // Diagnostic: does the ScreenCaptureKit path hear anything, given
+            // that the Core Audio tap path returns silence on this machine?
+            let seconds = (call.arguments as? [String: Any])?["seconds"] as? Double ?? 5
+            Task {
+                do {
+                    let probe = ScreenCaptureAudioProbe()
+                    let (peak, bytes) = try await probe.measure(seconds: seconds)
+                    await MainActor.run { result(["peak": Double(peak), "bytes": bytes]) }
+                } catch {
+                    await MainActor.run {
+                        result(FlutterError(code: "SCK_FAILED",
+                                            message: error.localizedDescription, details: nil))
+                    }
+                }
+            }
+
         case "startSystemCapture":
             guard let args = call.arguments as? [String: Any],
                   let pids = args["pids"] as? [Int], !pids.isEmpty else {
