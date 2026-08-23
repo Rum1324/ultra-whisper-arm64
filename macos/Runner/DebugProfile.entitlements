@@ -27,6 +27,12 @@
 	</array>
 	<key>com.apple.security.device.microphone</key>
 	<true/>
+	<!-- The modern spelling, and the one Core Audio process taps actually want.
+	     `device.microphone` alone is the legacy alias; a tap with only that
+	     returned digital silence while an otherwise-identical app carrying
+	     `device.audio-input` captured correctly. Verified 2026-08-23. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
 	<key>com.apple.security.personal-information.accessibility</key>

@@ -6,17 +6,25 @@ import ScreenCaptureKit
 
 /// ScreenCaptureKit fallback for system audio.
 ///
-/// Core Audio process taps are the better fit in principle — genuinely
-/// per-process, and a narrower permission — but on this machine they return
-/// correctly-sized buffers of digital silence under every configuration tried,
-/// including a global tap, with a Developer ID signature, hardened runtime, the
-/// audio-input entitlement and both privacy grants in place.
+/// This used to carry a note saying Core Audio process taps return nothing but
+/// digital silence on this machine, under every configuration tried. That was
+/// wrong, and it cost real time — a tap capturing a 440 Hz tone was verified
+/// working on 2026-08-23, in a standalone testbed on this same hardware.
 ///
-/// ScreenCaptureKit is what every shipping system-audio capture on macOS
-/// actually uses (and what the audio_toolkit Flutter plugin requires macOS 13
-/// for, which is below the 14.2 taps floor). Its audio is display-scoped rather
-/// than process-scoped, so the "them" track can pick up notification sounds and
-/// other media — a real cost, and much smaller than not capturing at all.
+/// What that testbed showed: no Audio Recording grant means silence, and
+/// granting it fixes the capture outright. Why THIS app never held such a grant
+/// is the leading, but not proven, part: it was ad-hoc signed, and an ad-hoc
+/// designated requirement is a list of cdhashes, so every rebuild invalidates
+/// the grant while System Settings still shows it enabled.
+///
+/// `AudioTapController` below is therefore the preferred path, not a doomed
+/// one. See `../UltraWhisper-audiocapture-test/HANDOFF-ULTRAWHISPER.md`.
+///
+/// This class stays because a fallback is still worth having: SCK needs only
+/// macOS 13 (below the 14.4 taps floor) and a permission that can be checked
+/// honestly. Its audio is display-scoped rather than process-scoped, so the
+/// "them" track picks up notification sounds and other media — which is exactly
+/// what the tap exists to avoid.
 @available(macOS 13.0, *)
 final class ScreenCaptureAudioProbe: NSObject, SCStreamOutput {
     private var stream: SCStream?
@@ -167,6 +175,7 @@ final class AudioTapController {
 
     private var sawAudio = false
     private var silenceReported = false
+    private var loggedBufferShape = false
     private var captureStarted: CFAbsoluteTime = 0
     private let lock = NSLock()
 
@@ -339,8 +348,40 @@ final class AudioTapController {
             throw error(status, "Could not create the capture device.")
         }
 
+        // `kAudioTapPropertyFormat` is what the tap ADVERTISES, and it is not
+        // always the clock the aggregate device actually runs on. Believing it
+        // resamples every buffer at the wrong ratio, which is invisible: full
+        // amplitude, no dropouts, a clean signal — just at the wrong speed.
+        // Measured 2026-08-23 with a 44.1 kHz Bluetooth output under a tap
+        // claiming 48 kHz: a 440 Hz tone arrived as 479 Hz, exactly 48000/44100.
+        // Whisper still returns plausible text from that, only worse, which is
+        // the kind of bug that gets blamed on the model for months.
+        //
+        // Note the aggregate's kAudioDevicePropertyStreamFormat does NOT help —
+        // it repeats the tap's claim. Verified empirically. The nominal sample
+        // rate is the property that tells the truth.
+        let aggregateNominal = Self.scalar(
+            aggregateID, Self.address(kAudioDevicePropertyNominalSampleRate), Double(0))
+        let outputNominal = Self.scalar(
+            defaultOutput, Self.address(kAudioDevicePropertyNominalSampleRate), Double(0))
+        NSLog("AudioTapController: rates — tap=%.0f aggregateNominal=%.0f output=%.0f",
+              source.sampleRate, aggregateNominal, outputNominal)
+
+        if let trueRate = [aggregateNominal, outputNominal]
+            .first(where: { $0 > 0 && abs($0 - source.sampleRate) > 1 }) {
+            var asbd = source.streamDescription.pointee
+            asbd.mSampleRate = trueRate
+            if let corrected = AVAudioFormat(streamDescription: &asbd) {
+                NSLog("AudioTapController: tap claims %.0f Hz but the samples are %.0f Hz — trusting %.0f",
+                      source.sampleRate, trueRate, trueRate)
+                sourceFormat = corrected
+                converter = AVAudioConverter(from: corrected, to: target)
+            }
+        }
+
         sawAudio = false
         silenceReported = false
+        loggedBufferShape = false
         captureStarted = CFAbsoluteTimeGetCurrent()
 
         status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) {
@@ -362,6 +403,40 @@ final class AudioTapController {
 
     private func handle(_ bufferList: UnsafePointer<AudioBufferList>) {
         guard let sourceFormat, let targetFormat, let converter else { return }
+
+        // Log the input list's shape once per capture. This retires a theory
+        // that otherwise costs an afternoon every time the tap looks silent:
+        // that the audio is really arriving in a later buffer, because the
+        // aggregate's output sub-device contributes streams ahead of the tap,
+        // and reading `mBuffers` (index 0 only, as below) sees someone else's
+        // silence. On this machine it prints `1 buffer(s): [0] 1ch 2048B`, so
+        // index 0 is correct here — but the log makes that checkable rather
+        // than assumed if the audio setup ever changes.
+        if !loggedBufferShape {
+            loggedBufferShape = true
+            let buffers = UnsafeMutableAudioBufferListPointer(
+                UnsafeMutablePointer(mutating: bufferList))
+            // Per-buffer RAW peak, read straight off the AudioBufferList before
+            // any conversion. This is the question the self-test cannot answer:
+            // whether Core Audio is handing us zeroes, or whether we are
+            // manufacturing them somewhere between here and the int16 output.
+            let shape = buffers.enumerated().map { index, buffer -> String in
+                var peak: Float = 0
+                if let data = buffer.mData {
+                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    data.withMemoryRebound(to: Float.self, capacity: count) { floats in
+                        for i in 0..<count where abs(floats[i]) > peak { peak = abs(floats[i]) }
+                    }
+                }
+                return "[\(index)] \(buffer.mNumberChannels)ch \(buffer.mDataByteSize)B rawPeak=\(peak)"
+            }.joined(separator: "  ")
+            let line = "buffers=\(buffers.count)  \(shape)\n"
+                + "sourceFormat=\(sourceFormat)\ntargetFormat=\(targetFormat)\n"
+            NSLog("AudioTapController: \(line)")
+            try? line.write(
+                toFile: NSHomeDirectory() + "/.ultrawhisper_tap_diag",
+                atomically: true, encoding: .utf8)
+        }
 
         let frames = AVAudioFrameCount(
             bufferList.pointee.mBuffers.mDataByteSize / max(1, sourceFormat.streamDescription.pointee.mBytesPerFrame))
