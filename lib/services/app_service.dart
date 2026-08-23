@@ -13,6 +13,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart';
 import '../models/app_state.dart';
 import '../models/settings.dart';
 import '../models/websocket_messages.dart';
+import 'meeting_service.dart';
 import '../utils/logger.dart';
 import 'audio_service.dart';
 import 'mic_activity_service.dart';
@@ -53,6 +54,16 @@ class AppService extends ChangeNotifier {
   StreamSubscription? _audioStreamSubscription;
   WebSocketChannel? _webSocketChannel;
   bool _pressEnterOnPaste = false;
+
+  /// Client half of the meeting protocol. Constructed lazily so it always
+  /// sends over whichever channel is currently connected — the socket is
+  /// replaced on reconnect, and capturing it once would send into a dead sink.
+  late final MeetingService _meetingService = MeetingService(
+    sendJson: (envelope) => _webSocketChannel?.sink.add(jsonEncode(envelope)),
+    sendBinary: (frame) => _webSocketChannel?.sink.add(frame),
+  );
+
+  MeetingService get meetingService => _meetingService;
 
   AppState get state => _state;
   Settings get settings => _settings;
@@ -297,6 +308,12 @@ class AppService extends ChangeNotifier {
 
       final data = jsonDecode(messageStr);
       final envelope = MessageEnvelope.fromJson(data);
+
+      // Meeting events first. The service claims only what belongs to a live
+      // meeting and returns false otherwise, so dictation keeps its handlers.
+      if (_meetingService.handleEvent(envelope.type, envelope.data)) {
+        return;
+      }
 
       switch (envelope.type) {
         case 'hello_ack':
