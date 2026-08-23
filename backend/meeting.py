@@ -231,6 +231,13 @@ class MeetingSession:
         share, say. That track never reaches the boundary, and waiting on it
         would stall the meeting permanently. So a track more than one whole
         window behind the leader is treated as stalled and no longer held for.
+
+        A track that has never sent anything is absent rather than slow, and is
+        not waited for at all — a meeting with no system capture still has to
+        produce windows. This cannot quietly swallow the other side in practice:
+        capture emits chunks every 20-40 ms, so for a track to be unseen when a
+        120 s window closes it would have to have been absent for the whole two
+        minutes, and absent is then the correct reading.
         """
         active = self._active_tracks()
         if not active:
