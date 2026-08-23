@@ -27,6 +27,14 @@ cp -f "${PROJECT_DIR}/backend/postprocess.py" "${BUNDLE_RESOURCES}/backend/"
 echo "Copying backend/requirements.txt..."
 cp -f "${PROJECT_DIR}/backend/requirements.txt" "${BUNDLE_RESOURCES}/backend/"
 
+echo "Copying backend/meeting.py..."
+cp -f "${PROJECT_DIR}/backend/meeting.py" "${BUNDLE_RESOURCES}/backend/"
+
+echo "Copying backend/summarize/..."
+rm -rf "${BUNDLE_RESOURCES}/backend/summarize"
+cp -R "${PROJECT_DIR}/backend/summarize" "${BUNDLE_RESOURCES}/backend/"
+find "${BUNDLE_RESOURCES}/backend/summarize" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
 # Copy whisper.cpp library (NEW - for in-memory transcription)
 echo "Copying libwhisper.dylib..."
 mkdir -p "${BUNDLE_RESOURCES}/backend/whisper.cpp/build/src"
