@@ -37,6 +37,15 @@ from .contracts import (
     render_window,
 )
 from .llm import OllamaStatus, chat_json, probe
+from .pipeline import (
+    MAX_REDUCE_FACTS,
+    STAGE_CLASSIFY,
+    STAGE_MAP,
+    STAGE_REDUCE,
+    STAGE_RENDER,
+    SummaryResult,
+    summarize_meeting,
+)
 from .render import render_note, render_note_lines
 from .schema import parse_facts, parse_note
 from .templates import DEFAULT_MEETING_TYPE, MeetingTemplate, get_template, note_schema_for
@@ -51,7 +60,12 @@ __all__ = [
     "HEADER_PREFIX",
     "INDENT",
     "MAX_NEST_DEPTH",
+    "MAX_REDUCE_FACTS",
     "SPEAKER_LABELS",
+    "STAGE_CLASSIFY",
+    "STAGE_MAP",
+    "STAGE_REDUCE",
+    "STAGE_RENDER",
     "Fact",
     "MeetingNote",
     "MeetingTemplate",
@@ -61,6 +75,7 @@ __all__ = [
     "SectionStyle",
     "Segment",
     "Speaker",
+    "SummaryResult",
     "TranscriptWindow",
     "Unavailable",
     "chat_json",
@@ -76,4 +91,5 @@ __all__ = [
     "render_note_lines",
     "render_segment",
     "render_window",
+    "summarize_meeting",
 ]
