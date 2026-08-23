@@ -30,6 +30,8 @@
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>UltraWhisper needs microphone access to record and transcribe audio.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>UltraWhisper records the other side of a meeting so it can transcribe it and write you a note. Only the app you are meeting in is captured, never your whole screen.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>UltraWhisper needs permission to send keystrokes to automatically paste transcribed text into other applications.</string>
 	<key>NSAccessibilityUsageDescription</key>

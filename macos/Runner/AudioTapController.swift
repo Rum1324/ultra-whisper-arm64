@@ -1,0 +1,567 @@
+import AVFoundation
+import AppKit
+import CoreAudio
+import Foundation
+import ScreenCaptureKit
+
+/// ScreenCaptureKit fallback for system audio.
+///
+/// This used to carry a note saying Core Audio process taps return nothing but
+/// digital silence on this machine, under every configuration tried. That was
+/// wrong, and it cost real time — a tap capturing a 440 Hz tone was verified
+/// working on 2026-08-23, in a standalone testbed on this same hardware.
+///
+/// What that testbed showed: no Audio Recording grant means silence, and
+/// granting it fixes the capture outright. Why THIS app never held such a grant
+/// is the leading, but not proven, part: it was ad-hoc signed, and an ad-hoc
+/// designated requirement is a list of cdhashes, so every rebuild invalidates
+/// the grant while System Settings still shows it enabled.
+///
+/// `AudioTapController` below is therefore the preferred path, not a doomed
+/// one. See `../UltraWhisper-audiocapture-test/HANDOFF-ULTRAWHISPER.md`.
+///
+/// This class stays because a fallback is still worth having: SCK needs only
+/// macOS 13 (below the 14.4 taps floor) and a permission that can be checked
+/// honestly. Its audio is display-scoped rather than process-scoped, so the
+/// "them" track picks up notification sounds and other media — which is exactly
+/// what the tap exists to avoid.
+@available(macOS 13.0, *)
+final class ScreenCaptureAudioProbe: NSObject, SCStreamOutput {
+    private var stream: SCStream?
+    private(set) var peak: Float = 0
+    private(set) var bytes = 0
+    private let lock = NSLock()
+
+    /// Whether screen-capture access is currently authorized.
+    ///
+    /// Unlike Core Audio taps — which are created happily and then hand back
+    /// silence when denied — this can be asked directly. It is the only
+    /// trustworthy permission signal available for system audio.
+    static func isAuthorized() -> Bool { CGPreflightScreenCaptureAccess() }
+
+    /// Ask the system to prompt. Returns immediately; the grant only takes
+    /// effect on the NEXT launch, which is macOS behaviour, not a bug here.
+    @discardableResult
+    static func requestAuthorization() -> Bool { CGRequestScreenCaptureAccess() }
+
+    /// Capture briefly and report the loudest sample seen.
+    func measure(seconds: Double) async throws -> (peak: Float, bytes: Int) {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: false)
+        guard let display = content.displays.first else {
+            throw NSError(domain: "sck", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey: "No display to capture from."])
+        }
+
+        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        let config = SCStreamConfiguration()
+        config.capturesAudio = true
+        config.sampleRate = 48_000
+        config.channelCount = 1
+        // Our own output would otherwise feed back into the recording.
+        config.excludesCurrentProcessAudio = true
+        // Smallest legal video capture; SCK still wants a video configuration
+        // even when only the audio is wanted.
+        config.width = 2
+        config.height = 2
+        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+
+        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: .global(qos: .userInitiated))
+        self.stream = stream
+
+        try await stream.startCapture()
+        try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        try? await stream.stopCapture()
+        self.stream = nil
+
+        lock.lock(); defer { lock.unlock() }
+        return (peak, bytes)
+    }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+                of type: SCStreamOutputType) {
+        guard type == .audio,
+              let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+        var length = 0
+        var pointer: UnsafeMutablePointer<Int8>?
+        guard CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: nil,
+                                          totalLengthOut: &length, dataPointerOut: &pointer) == noErr,
+              let pointer, length > 0 else { return }
+
+        let count = length / MemoryLayout<Float>.size
+        var localPeak: Float = 0
+        pointer.withMemoryRebound(to: Float.self, capacity: count) { floats in
+            for index in 0..<count {
+                let magnitude = abs(floats[index])
+                if magnitude > localPeak { localPeak = magnitude }
+            }
+        }
+        lock.lock()
+        bytes += length
+        if localPeak > peak { peak = localPeak }
+        lock.unlock()
+    }
+}
+
+/// Per-process system-audio capture, plus microphone activity detection.
+///
+/// This exists so a meeting can be recorded as TWO separate tracks — the mic
+/// ("me") and the meeting app's own output ("them"). There is no diarization
+/// anywhere in UltraWhisper; speaker attribution is physical, and it is what
+/// makes "my background vs theirs" and per-owner action items possible at all.
+///
+/// Core Audio process taps are used rather than ScreenCaptureKit. SCK's audio is
+/// display-scoped, not process-scoped: notification sounds and any other playing
+/// media land in the same buffer even when the content filter names a single
+/// app, which would put the wrong voice in the "them" track. Taps also need only
+/// the System Audio Recording permission instead of full Screen Recording.
+///
+/// Requires macOS 14.4. See `docs/MEETING_PROTOCOL.md`.
+@available(macOS 14.4, *)
+final class AudioTapController {
+
+    // The backend wants exactly this: PCM int16, mono, 16 kHz. Taps hand back
+    // float32 at the hardware rate (48 kHz here), so every buffer is converted
+    // before it leaves this class.
+    static let targetSampleRate: Double = 16_000
+
+    /// A capture that produced nothing but digital silence for this long is
+    /// reported as suspect.
+    ///
+    /// This matters more than it looks. When the System Audio Recording
+    /// permission is missing, macOS does NOT fail the call — the tap is created,
+    /// the aggregate device runs, the IOProc fires at the correct rate, and every
+    /// sample is zero. A denial is therefore indistinguishable from a meeting
+    /// where nobody spoke, and without this watchdog the user gets an empty
+    /// "them" track and no error whatsoever. Verified by direct experiment: a tap
+    /// on a process actively playing a test tone returned 131072 frames of pure
+    /// zeroes.
+    static let silenceWarningSeconds: Double = 8.0
+
+    /// Anything below this counts as digital silence rather than a quiet room.
+    private static let silenceFloor: Float = 1e-6
+
+    struct Process {
+        let objectID: AudioObjectID
+        let pid: pid_t
+        let bundleID: String?
+        let name: String
+        let runningOutput: Bool
+
+        var asDictionary: [String: Any] {
+            [
+                "pid": Int(pid),
+                "bundleId": bundleID as Any,
+                "name": name,
+                "runningOutput": runningOutput,
+            ]
+        }
+    }
+
+    /// Emitted for every converted buffer: PCM int16, mono, 16 kHz.
+    var onAudio: ((Data) -> Void)?
+    /// Emitted once if the capture looks like a silent-denial rather than a quiet room.
+    var onSilenceSuspected: (() -> Void)?
+    /// Emitted when the default input device starts or stops being used by anyone.
+    var onMicActivityChanged: ((Bool) -> Void)?
+
+    private var tapID = AudioObjectID(kAudioObjectUnknown)
+    private var aggregateID = AudioObjectID(kAudioObjectUnknown)
+    private var ioProcID: AudioDeviceIOProcID?
+    private var converter: AVAudioConverter?
+    private var sourceFormat: AVAudioFormat?
+    private var targetFormat: AVAudioFormat?
+
+    private var sawAudio = false
+    private var silenceReported = false
+    private var loggedBufferShape = false
+    private var captureStarted: CFAbsoluteTime = 0
+    private let lock = NSLock()
+
+    private var micListenerInstalled = false
+    private var micDeviceID = AudioObjectID(kAudioObjectUnknown)
+
+    // MARK: - Property plumbing
+
+    private static func address(
+        _ selector: AudioObjectPropertySelector,
+        _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+    }
+
+    private static func scalar<T>(_ obj: AudioObjectID, _ addr: AudioObjectPropertyAddress, _ def: T) -> T {
+        var addr = addr
+        var size = UInt32(MemoryLayout<T>.size)
+        var out = def
+        let err = AudioObjectGetPropertyData(obj, &addr, 0, nil, &size, &out)
+        return err == noErr ? out : def
+    }
+
+    private static func string(_ obj: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
+        var addr = address(selector)
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        var out: CFString?
+        let err = withUnsafeMutablePointer(to: &out) {
+            AudioObjectGetPropertyData(obj, &addr, 0, nil, &size, $0)
+        }
+        guard err == noErr, let value = out else { return nil }
+        return value as String
+    }
+
+    private static func objectList(_ obj: AudioObjectID, _ addr: AudioObjectPropertyAddress) -> [AudioObjectID] {
+        var addr = addr
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(obj, &addr, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var out = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(obj, &addr, 0, nil, &size, &out) == noErr else { return [] }
+        return out
+    }
+
+    // MARK: - Process discovery
+
+    /// Every process Core Audio knows about.
+    ///
+    /// A process only appears here once it has played audio at least once, so a
+    /// meeting app that has been launched but has not yet made a sound is
+    /// legitimately absent. Callers should re-list rather than cache.
+    static func listProcesses() -> [Process] {
+        objectList(AudioObjectID(kAudioObjectSystemObject),
+                   address(kAudioHardwarePropertyProcessObjectList)).map { object in
+            let pid = scalar(object, address(kAudioProcessPropertyPID), pid_t(-1))
+            let bundleID = string(object, kAudioProcessPropertyBundleID)
+            let name = NSRunningApplication(processIdentifier: pid)?.localizedName
+                ?? bundleID
+                ?? "pid \(pid)"
+            return Process(
+                objectID: object,
+                pid: pid,
+                bundleID: bundleID,
+                name: name,
+                runningOutput: scalar(object, address(kAudioProcessPropertyIsRunningOutput), UInt32(0)) != 0
+            )
+        }
+    }
+
+    // MARK: - Permission preflight
+
+    /// Create and immediately destroy a tap, to surface the System Audio
+    /// Recording permission prompt without recording anything.
+    ///
+    /// Worth doing early rather than at the start of a meeting. A missing
+    /// permission does not fail the capture — it yields digital silence — so
+    /// without a preflight the first symptom is an empty "them" track
+    /// discovered after the call is over and the audio is gone. Asking up
+    /// front turns an unrecoverable failure into a question.
+    ///
+    /// Returns whether the tap could be created at all. That is NOT proof of
+    /// authorization: macOS hands back a working tap and silent audio when the
+    /// permission is denied, so only `onSilenceSuspected` during a real capture
+    /// can tell those apart. Creation failing, though, is conclusive.
+    @discardableResult
+    func preflightPermission() -> Bool {
+        let description = CATapDescription(monoGlobalTapButExcludeProcesses: [])
+        description.name = "UltraWhisper Permission Check"
+        description.isPrivate = true
+        description.muteBehavior = .unmuted
+
+        var probeID = AudioObjectID(kAudioObjectUnknown)
+        let status = AudioHardwareCreateProcessTap(description, &probeID)
+        if probeID != AudioObjectID(kAudioObjectUnknown) {
+            AudioHardwareDestroyProcessTap(probeID)
+        }
+        NSLog("AudioTapController: permission preflight status=\(status)")
+        return status == noErr
+    }
+
+    // MARK: - Capture
+
+    func startCapture(processObjectIDs: [AudioObjectID]) throws {
+        guard !processObjectIDs.isEmpty else {
+            throw error(-1, "No audio processes to tap.")
+        }
+        stopCapture()
+
+        let description = CATapDescription(monoMixdownOfProcesses: processObjectIDs)
+        description.name = "UltraWhisper Meeting Tap"
+        description.isPrivate = true            // never appears as a system-wide device
+        description.muteBehavior = .unmuted     // the user must still HEAR the meeting
+
+        var status = AudioHardwareCreateProcessTap(description, &tapID)
+        guard status == noErr else {
+            throw error(status, "Could not create the audio tap.")
+        }
+
+        var asbd = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        var formatAddress = Self.address(kAudioTapPropertyFormat)
+        status = AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &size, &asbd)
+        guard status == noErr, let source = AVAudioFormat(streamDescription: &asbd) else {
+            stopCapture()
+            throw error(status, "Could not read the tap's audio format.")
+        }
+        guard let target = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: Self.targetSampleRate,
+            channels: 1,
+            interleaved: true
+        ) else {
+            stopCapture()
+            throw error(-1, "Could not build the 16 kHz output format.")
+        }
+        sourceFormat = source
+        targetFormat = target
+        converter = AVAudioConverter(from: source, to: target)
+
+        // The aggregate device is clocked by a real subdevice. With an empty
+        // subdevice list there is nothing driving the IO cycle, so anchor it to
+        // the current default output.
+        let defaultOutput = Self.scalar(
+            AudioObjectID(kAudioObjectSystemObject),
+            Self.address(kAudioHardwarePropertyDefaultOutputDevice),
+            AudioObjectID(kAudioObjectUnknown))
+        let outputUID = Self.string(defaultOutput, kAudioDevicePropertyDeviceUID)
+
+        var settings: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "UltraWhisper Meeting Capture",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceIsStackedKey: false,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceTapListKey: [
+                [
+                    kAudioSubTapUIDKey: description.uuid.uuidString,
+                    kAudioSubTapDriftCompensationKey: true,
+                ]
+            ],
+        ]
+        if let outputUID {
+            settings[kAudioAggregateDeviceMainSubDeviceKey] = outputUID
+            settings[kAudioAggregateDeviceSubDeviceListKey] = [[kAudioSubDeviceUIDKey: outputUID]]
+        }
+
+        status = AudioHardwareCreateAggregateDevice(settings as CFDictionary, &aggregateID)
+        guard status == noErr else {
+            stopCapture()
+            throw error(status, "Could not create the capture device.")
+        }
+
+        // `kAudioTapPropertyFormat` is what the tap ADVERTISES, and it is not
+        // always the clock the aggregate device actually runs on. Believing it
+        // resamples every buffer at the wrong ratio, which is invisible: full
+        // amplitude, no dropouts, a clean signal — just at the wrong speed.
+        // Measured 2026-08-23 with a 44.1 kHz Bluetooth output under a tap
+        // claiming 48 kHz: a 440 Hz tone arrived as 479 Hz, exactly 48000/44100.
+        // Whisper still returns plausible text from that, only worse, which is
+        // the kind of bug that gets blamed on the model for months.
+        //
+        // Note the aggregate's kAudioDevicePropertyStreamFormat does NOT help —
+        // it repeats the tap's claim. Verified empirically. The nominal sample
+        // rate is the property that tells the truth.
+        let aggregateNominal = Self.scalar(
+            aggregateID, Self.address(kAudioDevicePropertyNominalSampleRate), Double(0))
+        let outputNominal = Self.scalar(
+            defaultOutput, Self.address(kAudioDevicePropertyNominalSampleRate), Double(0))
+        NSLog("AudioTapController: rates — tap=%.0f aggregateNominal=%.0f output=%.0f",
+              source.sampleRate, aggregateNominal, outputNominal)
+
+        if let trueRate = [aggregateNominal, outputNominal]
+            .first(where: { $0 > 0 && abs($0 - source.sampleRate) > 1 }) {
+            var asbd = source.streamDescription.pointee
+            asbd.mSampleRate = trueRate
+            if let corrected = AVAudioFormat(streamDescription: &asbd) {
+                NSLog("AudioTapController: tap claims %.0f Hz but the samples are %.0f Hz — trusting %.0f",
+                      source.sampleRate, trueRate, trueRate)
+                sourceFormat = corrected
+                converter = AVAudioConverter(from: corrected, to: target)
+            }
+        }
+
+        sawAudio = false
+        silenceReported = false
+        loggedBufferShape = false
+        captureStarted = CFAbsoluteTimeGetCurrent()
+
+        status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) {
+            [weak self] _, inputData, _, _, _ in
+            self?.handle(inputData)
+        }
+        guard status == noErr, let ioProcID else {
+            stopCapture()
+            throw error(status, "Could not install the audio callback.")
+        }
+
+        status = AudioDeviceStart(aggregateID, ioProcID)
+        guard status == noErr else {
+            stopCapture()
+            throw error(status, "Could not start the capture device.")
+        }
+        NSLog("AudioTapController: capturing \(processObjectIDs.count) process(es) at \(source.sampleRate) Hz")
+    }
+
+    private func handle(_ bufferList: UnsafePointer<AudioBufferList>) {
+        guard let sourceFormat, let targetFormat, let converter else { return }
+
+        // Log the input list's shape once per capture. This retires a theory
+        // that otherwise costs an afternoon every time the tap looks silent:
+        // that the audio is really arriving in a later buffer, because the
+        // aggregate's output sub-device contributes streams ahead of the tap,
+        // and reading `mBuffers` (index 0 only, as below) sees someone else's
+        // silence. On this machine it prints `1 buffer(s): [0] 1ch 2048B`, so
+        // index 0 is correct here — but the log makes that checkable rather
+        // than assumed if the audio setup ever changes.
+        if !loggedBufferShape {
+            loggedBufferShape = true
+            let buffers = UnsafeMutableAudioBufferListPointer(
+                UnsafeMutablePointer(mutating: bufferList))
+            // Per-buffer RAW peak, read straight off the AudioBufferList before
+            // any conversion. This is the question the self-test cannot answer:
+            // whether Core Audio is handing us zeroes, or whether we are
+            // manufacturing them somewhere between here and the int16 output.
+            let shape = buffers.enumerated().map { index, buffer -> String in
+                var peak: Float = 0
+                if let data = buffer.mData {
+                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    data.withMemoryRebound(to: Float.self, capacity: count) { floats in
+                        for i in 0..<count where abs(floats[i]) > peak { peak = abs(floats[i]) }
+                    }
+                }
+                return "[\(index)] \(buffer.mNumberChannels)ch \(buffer.mDataByteSize)B rawPeak=\(peak)"
+            }.joined(separator: "  ")
+            let line = "buffers=\(buffers.count)  \(shape)\n"
+                + "sourceFormat=\(sourceFormat)\ntargetFormat=\(targetFormat)\n"
+            NSLog("AudioTapController: \(line)")
+            try? line.write(
+                toFile: NSHomeDirectory() + "/.ultrawhisper_tap_diag",
+                atomically: true, encoding: .utf8)
+        }
+
+        let frames = AVAudioFrameCount(
+            bufferList.pointee.mBuffers.mDataByteSize / max(1, sourceFormat.streamDescription.pointee.mBytesPerFrame))
+        guard frames > 0,
+              let input = AVAudioPCMBuffer(pcmFormat: sourceFormat, bufferListNoCopy: bufferList)
+        else { return }
+
+        noteSilence(in: input, frames: frames)
+
+        let capacity = AVAudioFrameCount(
+            (Double(frames) * targetFormat.sampleRate / sourceFormat.sampleRate).rounded(.up) + 32)
+        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
+
+        var pulled = false
+        var conversionError: NSError?
+        converter.convert(to: output, error: &conversionError) { _, status in
+            if pulled {
+                status.pointee = .noDataNow
+                return nil
+            }
+            pulled = true
+            status.pointee = .haveData
+            return input
+        }
+        guard conversionError == nil,
+              output.frameLength > 0,
+              let channel = output.int16ChannelData
+        else { return }
+
+        let byteCount = Int(output.frameLength) * MemoryLayout<Int16>.size
+        onAudio?(Data(bytes: channel[0], count: byteCount))
+    }
+
+    /// Watch for the all-zeroes signature of a permission denial.
+    private func noteSilence(in buffer: AVAudioPCMBuffer, frames: AVAudioFrameCount) {
+        guard !sawAudio, let floats = buffer.floatChannelData else { return }
+        let samples = floats[0]
+        for index in 0..<Int(frames) where abs(samples[index]) > Self.silenceFloor {
+            lock.lock(); sawAudio = true; lock.unlock()
+            return
+        }
+        lock.lock()
+        let elapsed = CFAbsoluteTimeGetCurrent() - captureStarted
+        let shouldReport = !silenceReported && elapsed > Self.silenceWarningSeconds
+        if shouldReport { silenceReported = true }
+        lock.unlock()
+
+        if shouldReport {
+            NSLog("AudioTapController: %.0fs of digital silence — System Audio Recording permission is probably missing",
+                  Self.silenceWarningSeconds)
+            onSilenceSuspected?()
+        }
+    }
+
+    func stopCapture() {
+        if let ioProcID {
+            AudioDeviceStop(aggregateID, ioProcID)
+            AudioDeviceDestroyIOProcID(aggregateID, ioProcID)
+            self.ioProcID = nil
+        }
+        if aggregateID != AudioObjectID(kAudioObjectUnknown) {
+            AudioHardwareDestroyAggregateDevice(aggregateID)
+            aggregateID = AudioObjectID(kAudioObjectUnknown)
+        }
+        if tapID != AudioObjectID(kAudioObjectUnknown) {
+            AudioHardwareDestroyProcessTap(tapID)
+            tapID = AudioObjectID(kAudioObjectUnknown)
+        }
+        converter = nil
+        sourceFormat = nil
+        targetFormat = nil
+    }
+
+    // MARK: - Microphone activity
+
+    /// Whether anything on the system is currently using the default input.
+    ///
+    /// This is the meeting-detection signal: a call is running when the mic goes
+    /// hot, and is over once it has been cold for a while. It deliberately says
+    /// nothing about WHO is using the mic — that it is in use at all is the whole
+    /// signal, and asking for more would mean watching other apps.
+    static func micIsActive() -> Bool {
+        let device = scalar(
+            AudioObjectID(kAudioObjectSystemObject),
+            address(kAudioHardwarePropertyDefaultInputDevice),
+            AudioObjectID(kAudioObjectUnknown))
+        guard device != AudioObjectID(kAudioObjectUnknown) else { return false }
+        return scalar(device, address(kAudioDevicePropertyDeviceIsRunningSomewhere), UInt32(0)) != 0
+    }
+
+    func startMicActivityMonitoring() {
+        guard !micListenerInstalled else { return }
+        micDeviceID = Self.scalar(
+            AudioObjectID(kAudioObjectSystemObject),
+            Self.address(kAudioHardwarePropertyDefaultInputDevice),
+            AudioObjectID(kAudioObjectUnknown))
+        guard micDeviceID != AudioObjectID(kAudioObjectUnknown) else { return }
+
+        var addr = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        let status = AudioObjectAddPropertyListenerBlock(micDeviceID, &addr, DispatchQueue.main) {
+            [weak self] _, _ in
+            self?.onMicActivityChanged?(Self.micIsActive())
+        }
+        micListenerInstalled = status == noErr
+        if !micListenerInstalled {
+            NSLog("AudioTapController: could not observe mic activity (status \(status))")
+        }
+    }
+
+    func stopMicActivityMonitoring() {
+        guard micListenerInstalled, micDeviceID != AudioObjectID(kAudioObjectUnknown) else { return }
+        var addr = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        AudioObjectRemovePropertyListenerBlock(micDeviceID, &addr, DispatchQueue.main) { _, _ in }
+        micListenerInstalled = false
+    }
+
+    // MARK: - Errors
+
+    private func error(_ status: OSStatus, _ message: String) -> NSError {
+        NSError(domain: "com.ultrawhisper.audiotap", code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    deinit {
+        stopCapture()
+        stopMicActivityMonitoring()
+    }
+}

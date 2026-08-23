@@ -13,8 +13,10 @@ import 'package:flutter_acrylic/flutter_acrylic.dart';
 import '../models/app_state.dart';
 import '../models/settings.dart';
 import '../models/websocket_messages.dart';
+import 'meeting_service.dart';
 import '../utils/logger.dart';
 import 'audio_service.dart';
+import 'mic_activity_service.dart';
 import 'settings_service.dart';
 import 'backend_service.dart';
 import 'hotkey_service.dart';
@@ -37,6 +39,11 @@ class AppService extends ChangeNotifier {
   final VolumeControlService _volumeControlService;
   final StatusBarService _statusBarService;
 
+  // Owned rather than injected: it has no dependencies of its own, and keeping
+  // it out of the constructor avoids threading meeting capture through every
+  // existing call site while the feature is still being built.
+  final MicActivityService _micActivityService = MicActivityService();
+
   final _uuid = const Uuid();
 
   AppState _state = const AppState();
@@ -47,6 +54,16 @@ class AppService extends ChangeNotifier {
   StreamSubscription? _audioStreamSubscription;
   WebSocketChannel? _webSocketChannel;
   bool _pressEnterOnPaste = false;
+
+  /// Client half of the meeting protocol. Constructed lazily so it always
+  /// sends over whichever channel is currently connected — the socket is
+  /// replaced on reconnect, and capturing it once would send into a dead sink.
+  late final MeetingService _meetingService = MeetingService(
+    sendJson: (envelope) => _webSocketChannel?.sink.add(jsonEncode(envelope)),
+    sendBinary: (frame) => _webSocketChannel?.sink.add(frame),
+  );
+
+  MeetingService get meetingService => _meetingService;
 
   AppState get state => _state;
   Settings get settings => _settings;
@@ -143,6 +160,60 @@ class AppService extends ChangeNotifier {
       AppLogger.debug('Setting up hotkeys...');
       await _setupHotkeys();
 
+      // Ask for System Audio Recording up front, before any meeting exists.
+      //
+      // A denied tap does not fail — macOS returns digital silence — so without
+      // asking here the first symptom would be an empty "them" track found
+      // after the call, when the audio is already gone. Never fatal: meeting
+      // capture is an extra on top of dictation, which must work regardless.
+      AppLogger.debug('Preflighting system audio permission...');
+      final audioTapReady = await _micActivityService.preflightPermission();
+      AppLogger.info('System audio tap available: $audioTapReady');
+      _micActivityService.startListening();
+
+      // Opt-in diagnostic: ULTRAWHISPER_TAP_SELFTEST=1 captures a few seconds
+      // from whatever is playing and reports whether real samples arrive. Only
+      // an actual capture can distinguish a granted permission from a denied
+      // one, since both produce a working tap.
+      // Opt-in diagnostic, triggered by either an env var or a sentinel file.
+      //
+      // The sentinel exists because the app MUST be launched via `open` for this
+      // to mean anything: TCC attributes a permission request to the
+      // "responsible process", which for a shell-launched binary is the shell,
+      // not the app — so a shell launch is denied no matter what the user
+      // granted. And `open` discards stdout, hence writing the result to a file
+      // rather than printing it.
+      final sentinel = File(
+        '${Platform.environment['HOME']}/.ultrawhisper_tap_selftest',
+      );
+      if (Platform.environment['ULTRAWHISPER_TAP_SELFTEST'] == '1' ||
+          sentinel.existsSync()) {
+        // A pid written into the sentinel narrows the test to one process.
+        final wanted = int.tryParse(
+          sentinel.existsSync() ? sentinel.readAsStringSync().trim() : '',
+        );
+        // Step by step, most conclusive signal first.
+        final authed = await _micActivityService.screenCaptureAuthorized();
+        if (!authed) {
+          await _micActivityService.requestScreenCaptureAccess();
+        }
+        final verdict = await _micActivityService.runSelfTest(onlyPid: wanted);
+        final sck = await _micActivityService.measureScreenCaptureKit();
+        final line = '[1] screenCaptureAuthorized=$authed\n'
+            '[2] tapPreflightCreated=$audioTapReady\n'
+            '[3] tap $verdict\n'
+            '[4] $sck';
+        // ignore: avoid_print
+        print('TAP-SELFTEST: $line');
+        try {
+          File('${Platform.environment['HOME']}/.ultrawhisper_tap_selftest.result')
+              .writeAsStringSync('${DateTime.now().toIso8601String()}  $line\n');
+        } catch (_) {
+          // A diagnostic that cannot write its result is still not worth
+          // taking the app down for.
+        }
+      }
+
       // Initialize backend
       AppLogger.debug('Initializing backend...');
       await _backendService.initialize();
@@ -237,6 +308,12 @@ class AppService extends ChangeNotifier {
 
       final data = jsonDecode(messageStr);
       final envelope = MessageEnvelope.fromJson(data);
+
+      // Meeting events first. The service claims only what belongs to a live
+      // meeting and returns false otherwise, so dictation keeps its handlers.
+      if (_meetingService.handleEvent(envelope.type, envelope.data)) {
+        return;
+      }
 
       switch (envelope.type) {
         case 'hello_ack':

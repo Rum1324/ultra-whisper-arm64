@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **UltraWhisper v0.3** - a fast, local-only macOS transcription utility built with Flutter (macOS frontend) + Python backend (faster-whisper/CTranslate2 Metal). The project aims to provide a minimal, glass-like floating UI for voice transcription with two capture modes (press-and-hold, toggle) and automatic pasting into the currently focused app.
+This is **UltraWhisper v0.8.0** - a fast, local-only macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
 
 **Key Features:**
 - Local-only transcription for privacy and offline use
 - Flutter macOS app with glass/vibrancy floating overlay window
-- Python backend using faster-whisper with Metal GPU acceleration
+- Python backend calling whisper.cpp through ctypes with Metal GPU acceleration
 - WebSocket communication between Flutter app and Python backend
-- Two capture modes: hold-to-talk and toggle record
+- Two toggle hotkeys: record (`⌥⇧R`) and record-then-press-Enter (`⌥⇧E`)
 - Automatic paste with clipboard preservation
 - Optional AI handoff macro with configurable keystroke sequences
 - Multi-language support (EN/JA auto-detect)
@@ -77,40 +77,48 @@ cd build/macos/Build/Products/Release
 zip -r UltraWhisper-v0.4.0-macOS.zip UltraWhisper.app
 ```
 
-See [docs/DISTRIBUTION_TESTING.md](docs/DISTRIBUTION_TESTING.md) for comprehensive testing guide.
+### Backend Tests
+
+```bash
+# Python backend tests (pytest resolves the `summarize` package via backend/conftest.py)
+cd backend && pytest tests/ -q
+```
 
 ## Architecture Overview
 
 ### High-Level Structure
 - **Frontend**: Flutter macOS app provides UI (menu bar status, floating overlay, settings window)
-- **Backend**: Python service using faster-whisper for transcription
-- **Communication**: WebSocket connection on localhost with ephemeral ports
+- **Backend**: Python service calling whisper.cpp through ctypes ([backend/whisper_wrapper.py](backend/whisper_wrapper.py))
+- **Communication**: WebSocket on `127.0.0.1`. `server.py` defaults to `--port 0`, but the Flutter side pins **8082** ([backend_service.dart](lib/services/backend_service.dart)); the server prints `SERVER_PORT:<n>` on stdout and Flutter parses that line to confirm startup
 - **Audio Processing**: 16kHz PCM audio streaming in 20-40ms chunks
-- **Models**: Whisper models (large-v3 default) with Metal GPU acceleration
+- **Models**: `ggml-large-v3-turbo.bin` bundled, Metal GPU acceleration
 
 ### Key Components
 
 #### Flutter App Structure
-- `lib/main.dart` - Entry point with basic Flutter app template (currently default counter app)
-- Platform-specific implementations for macOS, iOS, Android, Linux, Windows, Web
-- Future architecture will include:
-  - Menu bar status item with state indicators
-  - Floating overlay window (420×120px) with glass/vibrancy effect
-  - Settings window with tabbed interface
-  - Swift plugin for hotkeys and system keystroke injection
+- `lib/main.dart` - Entry point
+- `lib/services/app_service.dart` - Orchestrator wiring audio, hotkeys, backend, and paste
+- `lib/services/backend_service.dart` - Spawns the Python backend and sets `DYLD_LIBRARY_PATH` so `@rpath/libggml*.dylib` resolves inside the bundle
+- `lib/models/websocket_messages.dart` - Wire types, generated with **json_serializable + build_runner**
+- Menu bar status item, floating overlay, and settings window are implemented
 
-#### Backend Architecture (Planned)
-- WebSocket server handling audio streaming and transcription requests
-- faster-whisper integration with CTranslate2 backend
-- Model management and download system
-- Audio processing pipeline (16kHz PCM, real-time streaming)
-- Post-processing for punctuation, capitalization, disfluency cleanup
+#### Backend Architecture
+- `server.py` - asyncio WebSocket server, session management, energy VAD
+- `whisper_wrapper.py` - ctypes bindings to `libwhisper.dylib`, mirroring `whisper_full_params` field-for-field. Includes `detect_language()` for cheap encode-only pre-detection
+- `postprocess.py` - smart caps, terminal punctuation (JA-aware), disfluency cleanup
+- `summarize/` - meeting-note generation; see [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md)
+
+**Two behaviors worth knowing before changing transcription:**
+- Energy VAD rejects a clip whose **loudest** 30ms window has RMS < 0.01. It deliberately measures the window peak, not the whole-clip average — averaging over the silence padding in toggle mode dropped short or quiet utterances.
+- The custom-vocabulary initial prompt is gated to English speech. It wrecked Japanese punctuation when applied unconditionally.
 
 ### Communication Protocol
-- WebSocket messages use JSON envelope format with binary audio chunks
-- Commands: `hello`, `start_session`, `audio_chunk` (binary), `end_session`, `cancel`
-- Events: `hello_ack`, `partial`, `final`, `error`, `stats`
+- WebSocket messages use JSON envelope `{type, id, data}` with raw binary frames for audio
+- Commands: `hello`, `start_session`, `<binary audio>`, `end_session`, `cancel`
+- Events: `hello_ack`, `session_started`, `final`, `error`
+- Note: `PartialEvent` and `StatsEvent` exist on the Dart side, but `server.py` never emits `partial` or `stats`
 - Audio format: PCM 16-bit mono, 16kHz, 20-40ms chunks
+- Meeting sessions extend this protocol; see [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md)
 
 ## Development Setup
 
@@ -134,15 +142,17 @@ See [docs/DISTRIBUTION_TESTING.md](docs/DISTRIBUTION_TESTING.md) for comprehensi
 
 ## Project Status
 
-**Current State**: This is a fresh Flutter project with default template code. The comprehensive architecture and features described in the documentation (`docs/Glassy Whisper Docs v0.3.md`) are planned but not yet implemented.
+**Current State**: v0.8.0, shipping. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
 
-**Next Steps**:
-1. Replace default Flutter template with actual UltraWhisper UI components
-2. Implement menu bar integration and floating overlay window
-3. Create Swift plugin for macOS-specific functionality (hotkeys, accessibility)
-4. Develop Python backend with faster-whisper integration
-5. Implement WebSocket communication layer
-6. Add settings UI and configuration management
+**In progress**: a meeting-notes feature on `feat/meeting-notes` — record a meeting, transcribe it, and generate a structured note with a local LLM. See [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md) and `backend/summarize/`.
+
+### Departure from the all-bundled policy
+
+Meeting-note summarization talks to **Ollama** over `127.0.0.1:11434` and is the one part of the app that is *not* self-contained: it needs Ollama installed and a model pulled.
+
+This is deliberate. Bundling a `llama-server` would mean vendoring llama.cpp and shipping its ggml dylibs — which have **the same filenames** as whisper.cpp's (`libggml.dylib`, `libggml-base.dylib`, `libggml-metal.dylib`), all resolved via `@rpath`. Since `DYLD_LIBRARY_PATH` already points at whisper's copies and dyld consults it *before* `@rpath`, a bundled llama-server would load whisper's ggml and fail.
+
+Consequently, **summarization degrades gracefully rather than failing**: if Ollama is absent or the model is not pulled, transcription and the raw transcript still work and the app reports that notes are unavailable. Do not make meeting notes a hard dependency of the transcription path.
 
 ## Key Implementation Notes
 
