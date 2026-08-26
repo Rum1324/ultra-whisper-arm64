@@ -95,6 +95,10 @@ def _router(
             return 200, version
         if path.endswith("/api/tags"):
             return 200, tags
+        if path.endswith("/api/generate"):
+            # The eviction call — see `llm.unload`. Ollama answers a
+            # keep_alive:0 generate with an ordinary done envelope.
+            return 200, json.dumps({"model": MODEL, "done": True})
         which = _pass_of(body)
         if which == "classify":
             return 200, classify
@@ -368,3 +372,69 @@ def test_reduce_facts_are_capped(stub, caplog):  # noqa: F811
         if line.startswith("[")
     ]
     assert len(lines) == MAX_REDUCE_FACTS
+
+
+# ---------------------------------------------------------------------------
+# Freeing the model afterwards
+# ---------------------------------------------------------------------------
+
+
+def _evictions(server) -> list[Any]:
+    """Every keep_alive:0 request the pipeline made."""
+    return [
+        body
+        for path, body in ((r["path"], r.get("body")) for r in server.received)
+        if path.endswith("/api/generate") and (body or {}).get("keep_alive") == 0
+    ]
+
+
+def test_model_is_evicted_once_the_note_is_done(stub):  # noqa: F811
+    """
+    A note model big enough to be worth using is big enough to matter.
+
+    Ollama holds it resident for keep_alive after the last request, so without
+    this the machine stays under memory pressure for minutes after the note is
+    already on screen.
+    """
+    server = stub(_router())
+    result = summarize_meeting(_segments(), model=MODEL, host=server.host)
+
+    assert isinstance(result, SummaryResult)
+    evictions = _evictions(server)
+    assert len(evictions) == 1, "exactly one unload, after the work"
+    assert evictions[0]["model"] == MODEL
+
+
+def test_eviction_happens_even_when_the_note_fails(stub):  # noqa: F811
+    """A failed reduce still leaves the weights loaded; free them anyway."""
+    server = stub(_router(note_status=500))
+    result = summarize_meeting(_segments(), model=MODEL, host=server.host)
+
+    assert isinstance(result, Unavailable)
+    assert len(_evictions(server)) == 1
+
+
+def test_unload_after_false_leaves_the_model_resident(stub):  # noqa: F811
+    """Batch callers summarise repeatedly and should not pay the reload."""
+    server = stub(_router())
+    result = summarize_meeting(
+        _segments(), model=MODEL, host=server.host, unload_after=False
+    )
+
+    assert isinstance(result, SummaryResult)
+    assert _evictions(server) == []
+
+
+def test_nothing_is_evicted_when_nothing_was_loaded(stub):  # noqa: F811
+    """
+    An empty transcript never generates, so there is nothing resident.
+
+    Sending an unload anyway would put a request on the wire for a model this
+    run never caused Ollama to load — which could evict one another caller is
+    using.
+    """
+    server = stub(_router())
+    result = summarize_meeting([], model=MODEL, meeting_type="coffee_chat", host=server.host)
+
+    assert isinstance(result, SummaryResult)
+    assert server.received == []

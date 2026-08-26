@@ -50,6 +50,7 @@ from .contracts import (
     format_timestamp,
     render_window,
 )
+from .llm import unload as unload_model
 from .llm import DEFAULT_HOST, chat_json, probe
 from .render import render_note
 from .schema import parse_facts, parse_note
@@ -262,9 +263,16 @@ def summarize_meeting(
     host: str = DEFAULT_HOST,
     progress: Optional[ProgressFn] = None,
     budget_chars: int = DEFAULT_WINDOW_BUDGET_CHARS,
+    unload_after: bool = True,
 ) -> "SummaryResult | Unavailable":
     """
     Turn a meeting transcript into a rendered note.
+
+    `unload_after` evicts the model from Ollama when the note is done. On by
+    default because a note model large enough to be worth using is large enough
+    to matter: Ollama otherwise keeps it resident for its `keep_alive`, and the
+    user gets a machine under memory pressure for five minutes after the note
+    is already on screen. Pass False when summarising repeatedly in a batch.
 
     `segments` must carry absolute meeting-relative timestamps; see
     `contracts.Segment` for why that is the caller's job.
@@ -275,6 +283,47 @@ def summarize_meeting(
 
     Returns `SummaryResult`, or `Unavailable` when Ollama cannot produce a note.
     Does not raise.
+    """
+    # Only evict a model we actually caused to load. An empty transcript and a
+    # model that is not pulled both return without generating anything, and
+    # unloading in those cases would put a request on the wire that the tests
+    # — rightly — assert never happens.
+    loaded: list[bool] = []
+    try:
+        return _summarize(
+            segments,
+            model=model,
+            meeting_type=meeting_type,
+            title=title,
+            host=host,
+            progress=progress,
+            budget_chars=budget_chars,
+            loaded=loaded,
+        )
+    finally:
+        # try/finally rather than a call before each return: this function has
+        # several exit paths and a new one is an easy thing to add without
+        # noticing it leaves the weights resident until keep_alive expires.
+        if unload_after and loaded:
+            unload_model(model=model, host=host)
+
+
+def _summarize(
+    segments: Sequence[Segment],
+    *,
+    model: str,
+    meeting_type: Any = None,
+    title: Optional[str] = None,
+    host: str = DEFAULT_HOST,
+    progress: Optional[ProgressFn] = None,
+    budget_chars: int = DEFAULT_WINDOW_BUDGET_CHARS,
+    loaded: list[bool],
+) -> "SummaryResult | Unavailable":
+    """
+    The pipeline itself. See `summarize_meeting` for the contract.
+
+    Appends to `loaded` once a request has been made that causes Ollama to hold
+    the model in memory, so the caller knows whether there is anything to evict.
     """
     empty_title = title or "Meeting Notes"
 
@@ -299,6 +348,10 @@ def summarize_meeting(
     status = probe(model=model, host=host)
     if isinstance(status, Unavailable):
         return status
+
+    # Past the probe, every path below issues a generation, which is what
+    # makes Ollama resident. From here the caller owes an unload.
+    loaded.append(True)
 
     # --- classify -----------------------------------------------------------
     requested = normalize_meeting_type(meeting_type)

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import '../models/notes_model_presets.dart';
 import '../models/settings.dart';
 import '../widgets/hotkey_recorder.dart';
 
@@ -722,7 +723,53 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   }
 
   Widget _buildSummaryModelField() {
+    final active = presetForTag(_settings.meetingSummaryModel);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Size is shown because it is the thing the user actually feels — the
+        // difference between a note and an unusable laptop for two minutes.
+        ...kNotesModelPresets.map(
+          (preset) => RadioListTile<String>(
+            value: preset.tag,
+            groupValue: active?.tag,
+            onChanged: (value) {
+              if (value != null) {
+                _updateSettings(_settings.copyWith(meetingSummaryModel: value));
+              }
+            },
+            title: Text(
+              '${preset.label}  ·  ~${preset.approxGigabytes.toStringAsFixed(1)} GB',
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+            subtitle: Text(
+              preset.note,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            dense: true,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          active == null
+              ? 'Custom tag'
+              : 'Pull it once with:  ${active.pullCommand}',
+          style: const TextStyle(color: Colors.white38, fontSize: 11),
+        ),
+        const SizedBox(height: 6),
+        _buildSummaryModelTagField(),
+      ],
+    );
+  }
+
+  Widget _buildSummaryModelTagField() {
     return TextFormField(
+      // Keyed on the value: `initialValue` is only read on the first build, so
+      // without this, picking a preset above would leave a stale tag showing.
+      key: ValueKey(_settings.meetingSummaryModel),
       initialValue: _settings.meetingSummaryModel,
       style: const TextStyle(color: Colors.white, fontSize: 13),
       decoration: InputDecoration(

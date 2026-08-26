@@ -164,6 +164,10 @@ Meeting-note summarization talks to **Ollama** over `127.0.0.1:11434` and is the
 
 This is deliberate. Bundling a `llama-server` would mean vendoring llama.cpp and shipping its ggml dylibs — which have **the same filenames** as whisper.cpp's (`libggml.dylib`, `libggml-base.dylib`, `libggml-metal.dylib`), all resolved via `@rpath`. Since `DYLD_LIBRARY_PATH` already points at whisper's copies and dyld consults it *before* `@rpath`, a bundled llama-server would load whisper's ggml and fail.
 
+The notes model is chosen in Settings → Meetings from three presets, all Unsloth Dynamic GGUFs of Qwen3.6-35B-A3B pulled straight from HuggingFace: Balanced (`UD-Q3_K_XL`, ~16.8 GB), Light (`UD-Q2_K_XL`, ~12.3 GB) and Lightest (`UD-IQ2_M`, ~11.5 GB). Sizes are shown in the UI because the model is the one thing in this app the user physically feels — 17 GB resident is real memory pressure on a laptop. See [lib/models/notes_model_presets.dart](lib/models/notes_model_presets.dart).
+
+**The model is evicted from Ollama as soon as a note is finished** (`summarize_meeting(unload_after=True)`, default). Ollama otherwise keeps it resident for its `keep_alive` — five minutes of memory pressure after the note is already on screen. Eviction is a single `keep_alive: 0` request at the end rather than on every call, so the pipeline's classify/map/reduce passes still share one load. Nothing is evicted when nothing was loaded, so an empty transcript or a missing model never puts a request on the wire.
+
 Consequently, **summarization degrades gracefully rather than failing**: if Ollama is absent or the model is not pulled, transcription and the raw transcript still work and the app reports that notes are unavailable. Do not make meeting notes a hard dependency of the transcription path.
 
 ## Key Implementation Notes

@@ -38,6 +38,9 @@ _LOG = logging.getLogger(__name__)
 # passes `host` explicitly when it wants something else.
 DEFAULT_HOST = "http://127.0.0.1:11434"
 
+# Native generate route, used only to evict a model — see `unload`.
+GENERATE_PATH = "/api/generate"
+
 CHAT_PATH = "/api/chat"
 VERSION_PATH = "/api/version"
 TAGS_PATH = "/api/tags"
@@ -94,6 +97,7 @@ __all__ = [
     "CHAT_PATH",
     "DEFAULT_HOST",
     "DEFAULT_KEEP_ALIVE",
+    "unload",
     "DEFAULT_PROBE_TIMEOUT_SECONDS",
     "DEFAULT_TEMPERATURE",
     "DEFAULT_TIMEOUT_SECONDS",
@@ -427,6 +431,39 @@ class OllamaStatus:
     def has_model(self, model: str) -> bool:
         wanted = normalize_model_tag(model)
         return any(normalize_model_tag(name) == wanted for name in self.models)
+
+
+@_never_raises
+def unload(
+    *,
+    model: str,
+    host: str = DEFAULT_HOST,
+    timeout: float = 30.0,
+) -> bool:
+    """
+    Ask Ollama to evict `model` from memory now.
+
+    Ollama holds a model resident for `keep_alive` (5 minutes by default) after
+    the last request, so a 17 GB note model keeps 17 GB of the machine busy long
+    after the note is on screen. On a laptop that is the difference between
+    "summarising a meeting" and "the machine is unusable for the next five
+    minutes". A `keep_alive` of 0 on any request unloads immediately.
+
+    Deliberately NOT done by setting keep_alive=0 on every pipeline call: the
+    pipeline makes one classify, N map and one reduce request, and unloading
+    between each would re-read the weights from disk every time. Load once,
+    work, then evict — which is what calling this at the end achieves.
+
+    Returns whether Ollama acknowledged. Never raises: failing to free memory
+    must not fail a note that already succeeded.
+    """
+    body = _request_json(
+        host.rstrip("/") + GENERATE_PATH,
+        payload={"model": model, "keep_alive": 0},
+        timeout=timeout,
+        model=model,
+    )
+    return not isinstance(body, Unavailable)
 
 
 @_never_raises
