@@ -14,7 +14,10 @@ import '../models/app_state.dart';
 import '../models/settings.dart';
 import '../models/websocket_messages.dart';
 import 'meeting_service.dart';
+import 'meeting_detector.dart';
+import 'transcript_archive.dart';
 import '../utils/logger.dart';
+import '../utils/diagnostics.dart';
 import 'audio_service.dart';
 import 'mic_activity_service.dart';
 import 'settings_service.dart';
@@ -65,6 +68,50 @@ class AppService extends ChangeNotifier {
 
   MeetingService get meetingService => _meetingService;
 
+  /// Notices that a call has probably started and names the process whose
+  /// output belongs in the "them" track. Lazy for the same reason as
+  /// [_meetingService]: it needs the mic-activity bridge to exist first.
+  late final MeetingDetector _meetingDetector = MeetingDetector(
+    listProcesses: _micActivityService.listAudioProcesses,
+  );
+
+  MeetingCandidate? _pendingMeetingPrompt;
+  MeetingCandidate? _meetingTarget;
+  StreamSubscription? _meetingAudioSubscription;
+  Timer? _meetingTimer;
+  Duration _meetingDuration = Duration.zero;
+  DateTime? _meetingStartedAt;
+  List<String> _lastSavedMeetingFiles = const [];
+  bool _meetingSystemAudioSilent = false;
+  bool _autoSummarizePending = false;
+  bool _savedNoteForCurrentMeeting = false;
+  bool _meetingWindowExpanded = false;
+
+  /// The detected call awaiting a yes/no from the user, if any.
+  MeetingCandidate? get pendingMeetingPrompt => _pendingMeetingPrompt;
+
+  /// The process being tapped for "them", null for a mic-only meeting.
+  MeetingCandidate? get meetingTarget => _meetingTarget;
+
+  /// Whether the "them" track has produced nothing but digital silence.
+  ///
+  /// Surfaced rather than fatal: macOS answers an unauthorized tap with zeroes
+  /// instead of an error, and a one-sided meeting is still worth having.
+  bool get meetingSystemAudioSilent => _meetingSystemAudioSilent;
+
+  Duration get meetingDuration => _meetingDuration;
+
+  bool get isMeetingActive => _meetingService.phase != MeetingPhase.idle;
+
+  bool get isMeetingRecording => _meetingService.isRecording;
+
+  /// Files written for the meeting just finished, for the panel to show.
+  List<String> get lastSavedMeetingFiles => _lastSavedMeetingFiles;
+
+  /// Where meetings will be written, with the default already resolved.
+  String get meetingSaveDirectory =>
+      TranscriptArchive.resolveDirectory(_settings.meetingSaveDirectory);
+
   AppState get state => _state;
   Settings get settings => _settings;
   SettingsWindowService get settingsWindowService => _settingsWindowService;
@@ -92,6 +139,14 @@ class AppService extends ChangeNotifier {
   Future<void> initialize() async {
     AppLogger.info('Starting AppService initialization...');
 
+    // Whether the opt-in tap self-test has been requested for this launch.
+    //
+    // Read up front because it has to survive the early returns below: the
+    // diagnostic exists to be run under re-signed variants of the app that
+    // deliberately have no permissions yet, and bailing out at the microphone
+    // check would mean the tap is never measured at all. Costs a stat().
+    final selfTestRequested = Diagnostics.tapSelfTest;
+
     try {
       // Load settings
       AppLogger.debug('Loading settings...');
@@ -118,7 +173,10 @@ class AppService extends ChangeNotifier {
               errorMessage: 'Microphone permission required for recording',
             ),
           );
-          return;
+          // The tap needs System Audio Recording, not the microphone — they are
+          // separate TCC services. Carry on when a self-test was asked for, so
+          // a missing mic grant cannot mask the result being measured.
+          if (!selfTestRequested) return;
         }
       }
 
@@ -170,6 +228,7 @@ class AppService extends ChangeNotifier {
       final audioTapReady = await _micActivityService.preflightPermission();
       AppLogger.info('System audio tap available: $audioTapReady');
       _micActivityService.startListening();
+      _wireMeetingCapture();
 
       // Opt-in diagnostic: ULTRAWHISPER_TAP_SELFTEST=1 captures a few seconds
       // from whatever is playing and reports whether real samples arrive. Only
@@ -186,8 +245,7 @@ class AppService extends ChangeNotifier {
       final sentinel = File(
         '${Platform.environment['HOME']}/.ultrawhisper_tap_selftest',
       );
-      if (Platform.environment['ULTRAWHISPER_TAP_SELFTEST'] == '1' ||
-          sentinel.existsSync()) {
+      if (selfTestRequested) {
         // A pid written into the sentinel narrows the test to one process.
         final wanted = int.tryParse(
           sentinel.existsSync() ? sentinel.readAsStringSync().trim() : '',
@@ -198,15 +256,26 @@ class AppService extends ChangeNotifier {
           await _micActivityService.requestScreenCaptureAccess();
         }
         final verdict = await _micActivityService.runSelfTest(onlyPid: wanted);
+        final global = await _micActivityService.measureGlobalTap();
         final sck = await _micActivityService.measureScreenCaptureKit();
         final line = '[1] screenCaptureAuthorized=$authed\n'
             '[2] tapPreflightCreated=$audioTapReady\n'
             '[3] tap $verdict\n'
-            '[4] $sck';
+            '[4] $global\n'
+            '[5] $sck';
         // ignore: avoid_print
         print('TAP-SELFTEST: $line');
         try {
-          File('${Platform.environment['HOME']}/.ultrawhisper_tap_selftest.result')
+          // Name the result after the .app, so several re-signed variants can
+          // be launched in one sitting without overwriting each other. Bisecting
+          // a permission problem means running the same build under different
+          // identities, and a shared filename makes that one round trip each.
+          final parts = Platform.resolvedExecutable.split('/');
+          final index = parts.lastIndexWhere((p) => p.endsWith('.app'));
+          final variant = index >= 0
+              ? parts[index].substring(0, parts[index].length - 4)
+              : 'unknown';
+          File('${Platform.environment['HOME']}/.ultrawhisper_tap_selftest-$variant.result')
               .writeAsStringSync('${DateTime.now().toIso8601String()}  $line\n');
         } catch (_) {
           // A diagnostic that cannot write its result is still not worth
@@ -458,6 +527,14 @@ class AppService extends ChangeNotifier {
   Future<void> startRecording() async {
     AppLogger.audio('startRecording() called');
     AppLogger.debug('Current recording state: ${_state.recordingState}');
+
+    // Dictation and a meeting both want the microphone through the same
+    // AudioService, and the second caller would silently get nothing. Refusing
+    // is the honest outcome; the meeting is the session with something to lose.
+    if (isMeetingRecording) {
+      AppLogger.warning('Dictation is unavailable while a meeting is recording');
+      return;
+    }
 
     if (_state.recordingState != RecordingState.idle) {
       AppLogger.warning(
@@ -831,6 +908,10 @@ class AppService extends ChangeNotifier {
       await _applyDockVisibility(newSettings.dockVisibilityMode);
     }
 
+    _meetingDetector
+      ..enabled = newSettings.meetingAutoDetect
+      ..neverList = newSettings.meetingNeverDetectBundleIds.toSet();
+
     // Update status bar menu checkmark if volume duck setting changed
     if (oldSettings.duckVolumeDuringRecording != newSettings.duckVolumeDuringRecording) {
       await _statusBarService.setVolumeDuckState(newSettings.duckVolumeDuringRecording);
@@ -918,6 +999,19 @@ class AppService extends ChangeNotifier {
       }
     };
 
+    _statusBarService.onToggleMeeting = () {
+      AppLogger.info('Status bar: Meeting toggle requested');
+      if (isMeetingRecording) {
+        endMeeting();
+      } else if (isMeetingActive) {
+        // Ended but not yet discarded — the panel owns that decision, so just
+        // put it back in front rather than starting a second meeting.
+        _setMeetingWindow(true);
+      } else {
+        startMeeting();
+      }
+    };
+
     _statusBarService.onOpenSettings = () {
       AppLogger.info('Status bar: Open settings requested');
       _settingsWindowService.openSettingsWindow();
@@ -961,6 +1055,310 @@ class AppService extends ChangeNotifier {
     AppLogger.success('Status bar event handlers configured');
   }
 
+  // MARK: - Meetings
+  //
+  // A meeting is a long, two-track session that runs alongside dictation
+  // rather than through it: the microphone is "me", the meeting app's own
+  // output — captured with a Core Audio process tap — is "them". Attribution
+  // is physical, so nothing here diarizes. See docs/MEETING_PROTOCOL.md.
+
+  void _wireMeetingCapture() {
+    _micActivityService.onSystemAudio = (pcm) => _meetingService.sendSystemAudio(pcm);
+    _micActivityService.onSystemAudioSilent = _handleSystemAudioSilent;
+    _micActivityService.onMicActivityChanged = (active) {
+      AppLogger.debug('Microphone in use: $active');
+      _meetingDetector.micActivityChanged(active);
+    };
+
+    _meetingDetector
+      ..enabled = _settings.meetingAutoDetect
+      ..neverList = _settings.meetingNeverDetectBundleIds.toSet()
+      ..onMeetingLikely = _handleMeetingDetected;
+
+    // The meeting owns its own state; this only forwards it to the widgets,
+    // which observe AppService.
+    _meetingService.addListener(_onMeetingChanged);
+
+    unawaited(_micActivityService.startMicMonitoring());
+  }
+
+  void _onMeetingChanged() {
+    // Summarize once the backend has drained the last window and moved the
+    // meeting to `ended`. Doing it the instant `end()` is called would race
+    // those windows and summarize a transcript missing its final minute.
+    if (_autoSummarizePending &&
+        _meetingService.phase == MeetingPhase.ended &&
+        _meetingService.canSummarize) {
+      _autoSummarizePending = false;
+      // Write the transcript BEFORE asking for notes. Summarization needs
+      // Ollama and can fail or hang; the words already said must be on disk
+      // regardless of what happens next.
+      unawaited(_saveMeeting());
+      summarizeMeeting();
+    }
+
+    // A note arriving is the second and last thing worth writing.
+    if (_meetingService.phase == MeetingPhase.summarized &&
+        _meetingService.summary != null &&
+        !_savedNoteForCurrentMeeting) {
+      _savedNoteForCurrentMeeting = true;
+      unawaited(_saveMeeting());
+    }
+
+    notifyListeners();
+  }
+
+  void _handleSystemAudioSilent() {
+    if (_meetingSystemAudioSilent) return;
+    _meetingSystemAudioSilent = true;
+    AppLogger.warning(
+      'The "them" track is digital silence — System Audio Recording is '
+      'probably not granted. The meeting continues as mic-only.',
+    );
+    notifyListeners();
+  }
+
+  void _handleMeetingDetected(MeetingCandidate candidate) {
+    if (isMeetingActive || _pendingMeetingPrompt != null) return;
+    AppLogger.info('Meeting likely in $candidate');
+    _pendingMeetingPrompt = candidate;
+    notifyListeners();
+    unawaited(_setMeetingWindow(true));
+  }
+
+  /// "Record" on the detection prompt.
+  Future<void> acceptMeetingPrompt() async {
+    final candidate = _pendingMeetingPrompt;
+    _pendingMeetingPrompt = null;
+    if (candidate == null) return;
+    await startMeeting(target: candidate);
+  }
+
+  /// "Not now" (session cooldown) or "Never for this app" (persisted).
+  Future<void> dismissMeetingPrompt({bool never = false}) async {
+    final candidate = _pendingMeetingPrompt;
+    _pendingMeetingPrompt = null;
+    if (candidate == null) {
+      notifyListeners();
+      return;
+    }
+
+    if (never) {
+      final bundleId = _meetingDetector.never(candidate);
+      if (bundleId != null &&
+          !_settings.meetingNeverDetectBundleIds.contains(bundleId)) {
+        await updateSettings(_settings.copyWith(
+          meetingNeverDetectBundleIds: [
+            ..._settings.meetingNeverDetectBundleIds,
+            bundleId,
+          ],
+        ));
+      }
+    } else {
+      _meetingDetector.snooze(candidate);
+    }
+
+    if (!isMeetingActive) await _setMeetingWindow(false);
+    notifyListeners();
+  }
+
+  /// Begin recording a meeting.
+  ///
+  /// [target] is the process to tap for "them". When it is null the running
+  /// processes are scanned for one that is both capturing the mic and playing
+  /// audio; if none is found the meeting runs mic-only, which the protocol
+  /// supports rather than treats as broken.
+  Future<void> startMeeting({MeetingCandidate? target}) async {
+    if (isMeetingActive) {
+      AppLogger.warning('A meeting is already in progress');
+      return;
+    }
+    if (_state.recordingState == RecordingState.recording) {
+      AppLogger.warning('Cannot start a meeting while dictation is recording');
+      return;
+    }
+
+    try {
+      final resolved = target ?? await _findMeetingProcess();
+      _meetingTarget = resolved;
+      _meetingSystemAudioSilent = false;
+      _autoSummarizePending = false;
+      _savedNoteForCurrentMeeting = false;
+      _meetingDuration = Duration.zero;
+      _meetingStartedAt = DateTime.now();
+      _lastSavedMeetingFiles = const [];
+      _meetingDetector.suppressed = true;
+
+      _meetingService.start(
+        meetingId: _uuid.v4(),
+        language: 'auto',
+        title: resolved?.name,
+      );
+
+      // "Them" first: if the tap is going to be refused outright, better to
+      // know before the microphone is live.
+      if (resolved != null) {
+        final failure = await _micActivityService.startSystemCapture([resolved.pid]);
+        if (failure != null) {
+          AppLogger.warning(
+            'Could not tap ${resolved.name} ($failure); recording mic only',
+          );
+          _meetingSystemAudioSilent = true;
+        }
+      } else {
+        AppLogger.info('No meeting process found — recording mic only');
+        _meetingSystemAudioSilent = true;
+      }
+
+      // "Me": a second subscription on the same broadcast stream, kept apart
+      // from the dictation one so neither path has to know about the other.
+      // Deliberately no volume ducking — the user has to hear the meeting.
+      await _audioService.startRecording();
+      _meetingAudioSubscription = _audioService.audioStream.listen(
+        (pcm) => _meetingService.sendMicAudio(pcm),
+        onError: (error) => AppLogger.error('Meeting mic stream error', error),
+      );
+
+      _meetingTimer?.cancel();
+      _meetingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        _meetingDuration = Duration(seconds: timer.tick);
+        notifyListeners();
+      });
+
+      await _statusBarService.setMeetingState(true);
+      await _setMeetingWindow(true);
+      AppLogger.success('Meeting started (${resolved ?? 'mic only'})');
+      notifyListeners();
+    } catch (e, stackTrace) {
+      AppLogger.error('Failed to start meeting', e);
+      AppLogger.debug('Stack trace: $stackTrace');
+      await cancelMeeting();
+    }
+  }
+
+  /// Stop recording. The transcript stays on screen and the backend keeps the
+  /// session alive so notes can still be generated.
+  Future<void> endMeeting({bool summarize = true}) async {
+    if (!isMeetingRecording) return;
+
+    _meetingTimer?.cancel();
+    _meetingTimer = null;
+    await _meetingAudioSubscription?.cancel();
+    _meetingAudioSubscription = null;
+
+    await _audioService.stopRecording();
+    await _micActivityService.stopSystemCapture();
+
+    _autoSummarizePending = summarize;
+    _meetingService.end();
+
+    await _statusBarService.setMeetingState(false);
+    _meetingDetector.suppressed = false;
+    AppLogger.success('Meeting ended after ${_meetingDuration.inSeconds}s');
+    notifyListeners();
+  }
+
+  /// Generate notes for the meeting just recorded. Safe to call again — that is
+  /// the intended way to retry with a bigger model after a weak note.
+  void summarizeMeeting({String? model}) {
+    if (!_meetingService.canSummarize) {
+      AppLogger.warning('Nothing to summarize yet');
+      return;
+    }
+    _meetingService.summarize(model: model ?? _settings.meetingSummaryModel);
+  }
+
+  /// Write the current meeting to the configured folder.
+  ///
+  /// Called twice per meeting by design — once when recording stops, once when
+  /// the note arrives — so the transcript is never contingent on Ollama. The
+  /// second write overwrites the first, since the filename is derived from the
+  /// meeting's start time.
+  Future<void> _saveMeeting() async {
+    if (!_settings.saveMeetingTranscripts) return;
+
+    _lastSavedMeetingFiles = await TranscriptArchive.save(
+      directory: _settings.meetingSaveDirectory,
+      transcript: _meetingService.transcript,
+      transcriptText: _meetingService.transcriptText,
+      title: _meetingTarget?.name,
+      noteMarkdown: _meetingService.summary?.markdown,
+      when: _meetingStartedAt,
+    );
+    notifyListeners();
+  }
+
+  /// Save on demand, for a "Save now" affordance or a retried note.
+  Future<void> saveMeetingNow() => _saveMeeting();
+
+  /// Drop the meeting and free the backend session.
+  Future<void> cancelMeeting() async {
+    _meetingTimer?.cancel();
+    _meetingTimer = null;
+    await _meetingAudioSubscription?.cancel();
+    _meetingAudioSubscription = null;
+
+    if (_audioService.isRecording && _state.recordingState != RecordingState.recording) {
+      await _audioService.stopRecording();
+    }
+    await _micActivityService.stopSystemCapture();
+
+    _meetingService.cancel();
+    _autoSummarizePending = false;
+    _meetingTarget = null;
+    _meetingSystemAudioSilent = false;
+    _meetingDuration = Duration.zero;
+    _meetingDetector.suppressed = false;
+
+    await _statusBarService.setMeetingState(false);
+    await _setMeetingWindow(false);
+    notifyListeners();
+  }
+
+  /// The first process that is both capturing the mic and playing audio.
+  ///
+  /// The same rule the detector uses, applied on demand so a meeting started
+  /// by hand still gets its "them" track chosen automatically.
+  Future<MeetingCandidate?> _findMeetingProcess() async {
+    final processes = await _micActivityService.listAudioProcesses();
+    for (final process in processes) {
+      if (process['runningInput'] != true || process['runningOutput'] != true) {
+        continue;
+      }
+      final processPid = process['pid'];
+      if (processPid is! int || processPid == pid) continue;
+      return MeetingCandidate(
+        pid: processPid,
+        name: (process['name'] ?? 'pid $processPid').toString(),
+        bundleId: process['bundleId'] as String?,
+      );
+    }
+    return null;
+  }
+
+  /// Grow the overlay window into a readable panel, and shrink it back after.
+  ///
+  /// The main window is a 360x100 dictation overlay; a live transcript needs
+  /// more than that, and the app is LSUIElement so there is no Dock icon to
+  /// click when a prompt appears.
+  Future<void> _setMeetingWindow(bool expanded) async {
+    if (_meetingWindowExpanded == expanded) return;
+    _meetingWindowExpanded = expanded;
+    try {
+      await windowManager.setSize(
+        expanded
+            ? const Size(420, 520)
+            : Size(_settings.overlayWidth, _settings.overlayHeight),
+      );
+      if (expanded) {
+        await windowManager.show();
+        await windowManager.focus();
+      }
+    } catch (e) {
+      AppLogger.error('Failed to resize window for the meeting panel', e);
+    }
+  }
+
   void _updateState(AppState newState) {
     _state = newState;
     notifyListeners();
@@ -970,6 +1368,15 @@ class AppService extends ChangeNotifier {
     AppLogger.info('Cleaning up AppService...');
     _recordingTimer?.cancel();
     _audioStreamSubscription?.cancel();
+
+    // The tap owns a real aggregate audio device. Leaving it behind would keep
+    // the meeting app's output routed through a device nothing is reading.
+    _meetingTimer?.cancel();
+    await _meetingAudioSubscription?.cancel();
+    _meetingAudioSubscription = null;
+    _meetingDetector.dispose();
+    await _micActivityService.stopSystemCapture();
+    await _micActivityService.stopMicMonitoring();
 
     // Properly close WebSocket connection
     if (_webSocketChannel != null) {
@@ -997,6 +1404,10 @@ class AppService extends ChangeNotifier {
     AppLogger.info('Disposing AppService...');
     _recordingTimer?.cancel();
     _audioStreamSubscription?.cancel();
+    _meetingTimer?.cancel();
+    _meetingAudioSubscription?.cancel();
+    _meetingDetector.dispose();
+    _meetingService.removeListener(_onMeetingChanged);
 
     // Close WebSocket connection synchronously
     _webSocketChannel?.sink.close();

@@ -32,6 +32,28 @@ class Settings {
   final bool disfluencyCleanup;
   final List<String> customTerms; // Custom dictionary for domain-specific terms
 
+  // Meeting settings
+  /// Watch for a process that is capturing the mic and playing audio at the
+  /// same time, and offer to record it. Off means meetings are started by hand.
+  final bool meetingAutoDetect;
+
+  /// Bundle IDs the user answered "Never for this app" to.
+  final List<String> meetingNeverDetectBundleIds;
+
+  /// Where meeting transcripts and notes are written when a meeting ends.
+  ///
+  /// Empty means the default, `~/Documents/UltraWhisper` — resolved lazily so a
+  /// stored setting is never silently rewritten by a change of default.
+  final String meetingSaveDirectory;
+
+  /// Write the transcript and note to [meetingSaveDirectory] automatically.
+  final bool saveMeetingTranscripts;
+
+  /// Ollama tag used for meeting notes. Summarization is the one part of the
+  /// app that is not self-contained, and it degrades to a plain transcript when
+  /// this model is not pulled — see CLAUDE.md.
+  final String meetingSummaryModel;
+
   // UI settings (not exposed in UI, used internally)
   final double overlayWidth;
   final double overlayHeight;
@@ -60,6 +82,12 @@ class Settings {
     this.disfluencyCleanup = true,
     this.customTerms = const [],
 
+    this.meetingAutoDetect = true,
+    this.meetingNeverDetectBundleIds = const [],
+    this.meetingSummaryModel = 'gemma4:e2b',
+    this.meetingSaveDirectory = '',
+    this.saveMeetingTranscripts = true,
+
     this.overlayWidth = 360.0,
     this.overlayHeight = 100.0,
 
@@ -86,6 +114,11 @@ class Settings {
     bool? punctuation,
     bool? disfluencyCleanup,
     List<String>? customTerms,
+    bool? meetingAutoDetect,
+    List<String>? meetingNeverDetectBundleIds,
+    String? meetingSummaryModel,
+    String? meetingSaveDirectory,
+    bool? saveMeetingTranscripts,
     double? overlayWidth,
     double? overlayHeight,
     double? glassOpacity,
@@ -107,6 +140,13 @@ class Settings {
       punctuation: punctuation ?? this.punctuation,
       disfluencyCleanup: disfluencyCleanup ?? this.disfluencyCleanup,
       customTerms: customTerms ?? this.customTerms,
+      meetingAutoDetect: meetingAutoDetect ?? this.meetingAutoDetect,
+      meetingNeverDetectBundleIds:
+          meetingNeverDetectBundleIds ?? this.meetingNeverDetectBundleIds,
+      meetingSummaryModel: meetingSummaryModel ?? this.meetingSummaryModel,
+      meetingSaveDirectory: meetingSaveDirectory ?? this.meetingSaveDirectory,
+      saveMeetingTranscripts:
+          saveMeetingTranscripts ?? this.saveMeetingTranscripts,
       overlayWidth: overlayWidth ?? this.overlayWidth,
       overlayHeight: overlayHeight ?? this.overlayHeight,
       glassOpacity: glassOpacity ?? this.glassOpacity,

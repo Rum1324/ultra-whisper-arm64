@@ -8,6 +8,7 @@ class StatusBarService {
   // Callbacks for menu actions
   Function()? onStartRecording;
   Function()? onStopRecording;
+  Function()? onToggleMeeting;
   Function()? onOpenSettings;
   Function()? onRestart;
   Function()? onCheckForUpdates;
@@ -35,6 +36,11 @@ class StatusBarService {
       case 'stopRecording':
         AppLogger.info('StatusBarService: Stop recording requested from menu bar');
         onStopRecording?.call();
+        break;
+
+      case 'toggleMeeting':
+        AppLogger.info('StatusBarService: Meeting toggle requested from menu bar');
+        onToggleMeeting?.call();
         break;
 
       case 'openSettings':
@@ -75,6 +81,17 @@ class StatusBarService {
       AppLogger.debug('StatusBarService: Recording state set to $recording');
     } catch (e) {
       AppLogger.error('StatusBarService: Failed to set recording state', e);
+    }
+  }
+
+  /// Reflect whether a meeting is being recorded, so the menu reads
+  /// "Stop Meeting" while one is live.
+  Future<void> setMeetingState(bool active) async {
+    try {
+      await _statusBarChannel.invokeMethod('setMeetingState', {'active': active});
+      AppLogger.debug('StatusBarService: Meeting state set to $active');
+    } catch (e) {
+      AppLogger.error('StatusBarService: Failed to set meeting state', e);
     }
   }
 

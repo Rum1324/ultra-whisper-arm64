@@ -84,6 +84,22 @@ echo "Copying bundled Python runtime..."
 if [ -d "${PROJECT_DIR}/backend/python_bundle/python" ]; then
     mkdir -p "${BUNDLE_RESOURCES}/python"
     cp -R "${PROJECT_DIR}/backend/python_bundle/python/"* "${BUNDLE_RESOURCES}/python/"
+
+    # Ship no bytecode cache.
+    #
+    # These .pyc files get sealed into the code signature, and the copy above
+    # changes every source mtime — so the first import finds them stale,
+    # rewrites them IN PLACE, and breaks the seal. A bundle that fails
+    # `codesign -v` no longer matches the code requirement TCC stored with its
+    # permissions, so grants that still read as enabled stop working; a Core
+    # Audio process tap then returns digital silence rather than an error.
+    # Diagnosed 2026-08-25 after it was mistaken for a permissions bug for days.
+    #
+    # The runtime also sets PYTHONPYCACHEPREFIX (see backend_service.dart) so
+    # bytecode is cached outside the bundle. This is the build-time half: with
+    # nothing sealed there is nothing to invalidate.
+    echo "Stripping __pycache__ from the bundled Python..."
+    find "${BUNDLE_RESOURCES}/python" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
     echo "Bundled Python copied successfully"
 else
     echo "WARNING: Bundled Python not found at ${PROJECT_DIR}/backend/python_bundle/python"

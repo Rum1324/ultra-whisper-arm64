@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill -f \"UltraWhisper.app/Contents/MacOS/../Resources/backend/server.py\")",
+      "Bash(sqlite3 '/Users/sakot/Library/Application Support/com.apple.TCC/TCC.db' 'select service, client, auth_value from access where client like '\\\\''%ultrawhisper%'\\\\'';')",
+      "Bash(lsof -nP -iTCP:8082 -sTCP:LISTEN)"
+    ]
+  }
+}

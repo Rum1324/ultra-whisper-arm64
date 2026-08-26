@@ -144,7 +144,19 @@ cd backend && pytest tests/ -q
 
 **Current State**: v0.8.0, shipping. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
 
-**In progress**: a meeting-notes feature on `feat/meeting-notes` — record a meeting, transcribe it, and generate a structured note with a local LLM. See [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md) and `backend/summarize/`.
+**In progress**: meeting notes — record a meeting as two tracks, transcribe it, and generate a structured note with a local LLM. Merged to `main`. See [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md) and `backend/summarize/`.
+
+Capture, protocol, backend, detection, orchestration and a minimal panel are all in place, and the Core Audio process tap is **verified working on real hardware** (2026-08-25: 16 kHz mono, peak 23513/32767, confirmed by measuring the dumped WAV outside the app). What remains is an end-to-end run through a real meeting.
+
+Audio Recording (`kTCCServiceAudioCapture`) is a **separate TCC service from Microphone** (`kTCCServiceMicrophone`); a grant for one says nothing about the other, and a denied tap returns digital silence rather than an error. Before debugging a silent "them" track, read the header comment in [AudioTapController.swift](macos/Runner/AudioTapController.swift) — and dump the audio to a WAV and measure it outside the process first. A measurement bug, not the tap, caused a multi-day false trail.
+
+The opt-in self-test (`touch ~/.ultrawhisper_tap_selftest`, optionally with a pid in it) writes `~/.ultrawhisper_tap_selftest-<app>.result`, a per-callback trace to `~/.ultrawhisper_tap_diag-<app>`, and the captured audio to `~/ultrawhisper-tap-<name>.wav`. Launch with `open` or Finder, never `flutter run` — TCC attributes a grant to the responsible process, which for a shell launch is the terminal.
+
+### Meeting detection
+
+A meeting is detected app-agnostically: a real-time call is the one common situation where a **single process** is capturing the microphone and playing audio at the same time. Music is output-only, dictation is input-only, and a browser in a Google Meet call is both — which is why the rule works without a list of meeting apps. The same signal also names the process to tap for the "them" track. See [lib/services/meeting_detector.dart](lib/services/meeting_detector.dart) and `test/meeting_detector_test.dart`.
+
+Dictation is refused while a meeting records: both want the microphone through the one `AudioService`, and the second subscriber would silently get nothing.
 
 ### Departure from the all-bundled policy
 

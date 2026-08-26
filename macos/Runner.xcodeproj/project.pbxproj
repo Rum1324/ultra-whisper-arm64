@@ -29,6 +29,7 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		734E1CC7523941398B230BD8 /* VolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F762538C2B4B7083AF09E6 /* VolumeController.swift */; };
 		77BDDA677E224D28AC253581 /* AudioTapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1360A974F97E4270B683BB27 /* AudioTapHandler.swift */; };
+		9F7E29020F284CE4B67B58F5 /* FolderPickerHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99129A23CF12486EAA6E4350 /* FolderPickerHandler.swift */; };
 		9D12119CEDC8E2E6B63B0BD5 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B09A624A166080430F9D2A61 /* Pods_RunnerTests.framework */; };
 		A1F08523800042038A528010 /* AudioTapController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5DA2A5A0CE146C588EC8B9E /* AudioTapController.swift */; };
 		AA1234567890ABCD12345678 /* KeystrokeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1234567890ABCD12345679 /* KeystrokeHandler.swift */; };
@@ -70,6 +71,7 @@
 
 /* Begin PBXFileReference section */
 		1360A974F97E4270B683BB27 /* AudioTapHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTapHandler.swift; sourceTree = "<group>"; };
+		99129A23CF12486EAA6E4350 /* FolderPickerHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPickerHandler.swift; sourceTree = "<group>"; };
 		3215F253DCC61076D2739CA5 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D7294CF71000263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				AA1234567890ABCD12345679 /* KeystrokeHandler.swift */,
 				D5DA2A5A0CE146C588EC8B9E /* AudioTapController.swift */,
 				1360A974F97E4270B683BB27 /* AudioTapHandler.swift */,
+				99129A23CF12486EAA6E4350 /* FolderPickerHandler.swift */,
 				55F762538C2B4B7083AF09E6 /* VolumeController.swift */,
 				F1A541FA6810428EAB507182 /* VolumeHandler.swift */,
 				BB2345678901BCDE23456790 /* AppLifecycleHandler.swift */,
@@ -478,6 +481,7 @@
 				AA1234567890ABCD12345678 /* KeystrokeHandler.swift in Sources */,
 				A1F08523800042038A528010 /* AudioTapController.swift in Sources */,
 				77BDDA677E224D28AC253581 /* AudioTapHandler.swift in Sources */,
+				9F7E29020F284CE4B67B58F5 /* FolderPickerHandler.swift in Sources */,
 				734E1CC7523941398B230BD8 /* VolumeController.swift in Sources */,
 				C62D6CD9CC5345789244BC0E /* VolumeHandler.swift in Sources */,
 				BB2345678901BCDE23456789 /* AppLifecycleHandler.swift in Sources */,

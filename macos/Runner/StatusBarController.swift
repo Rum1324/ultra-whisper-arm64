@@ -5,13 +5,16 @@ class StatusBarController {
     private var statusItem: NSStatusItem?
     private var menu: NSMenu?
     private var recordingMenuItem: NSMenuItem?
+    private var meetingMenuItem: NSMenuItem?
     private var volumeDuckMenuItem: NSMenuItem?
     private var isRecording = false
+    private var isMeetingActive = false
     private var volumeDuckEnabled = true  // Default to true
 
     // Callback for menu actions
     var onStartRecording: (() -> Void)?
     var onStopRecording: (() -> Void)?
+    var onToggleMeeting: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onRestart: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
@@ -58,6 +61,17 @@ class StatusBarController {
         )
         recordingMenuItem?.target = self
         menu?.addItem(recordingMenuItem!)
+
+        // Meeting toggle. Separate from dictation on purpose: a meeting is a
+        // long two-track session that outlives any one utterance, so sharing the
+        // dictation item would make "stop" ambiguous.
+        meetingMenuItem = NSMenuItem(
+            title: "Record Meeting",
+            action: #selector(toggleMeeting),
+            keyEquivalent: ""
+        )
+        meetingMenuItem?.target = self
+        menu?.addItem(meetingMenuItem!)
 
         menu?.addItem(NSMenuItem.separator())
 
@@ -120,6 +134,17 @@ class StatusBarController {
     }
 
     // MARK: - Public Methods
+
+    /// Reflect whether a meeting is being recorded.
+    func setMeetingState(_ active: Bool) {
+        isMeetingActive = active
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.meetingMenuItem?.title = active ? "Stop Meeting" : "Record Meeting"
+            NSLog("StatusBarController: Meeting state updated to \(active)")
+        }
+    }
 
     func setRecordingState(_ recording: Bool) {
         isRecording = recording
@@ -186,6 +211,11 @@ class StatusBarController {
         }
     }
 
+    @objc private func toggleMeeting() {
+        NSLog("StatusBarController: Toggle meeting clicked")
+        onToggleMeeting?()
+    }
+
     @objc private func toggleVolumeDuck() {
         NSLog("StatusBarController: Volume duck toggle clicked")
         onToggleVolumeDuck?()
@@ -237,6 +267,19 @@ extension StatusBarController {
                 return
             }
             controller.setRecordingState(recording)
+            result(nil)
+
+        case "setMeetingState":
+            guard let args = call.arguments as? [String: Any],
+                  let active = args["active"] as? Bool else {
+                result(FlutterError(
+                    code: "INVALID_ARGUMENTS",
+                    message: "Missing active argument",
+                    details: nil
+                ))
+                return
+            }
+            controller.setMeetingState(active)
             result(nil)
 
         case "showStatusBar":

@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import 'package:ultrawhisper/models/app_state.dart';
 import 'package:ultrawhisper/services/app_service.dart';
+import 'package:ultrawhisper/services/meeting_detector.dart';
 import 'package:ultrawhisper/widgets/app_content.dart';
 import 'package:ultrawhisper/widgets/floating_overlay.dart';
 
@@ -26,6 +27,15 @@ class FakeAppService extends ChangeNotifier implements AppService {
 
   @override
   AppState get state => _state;
+
+  /// AppContent chooses between the dictation overlay and the meeting panel on
+  /// these two, so the fake has to answer them. Idle by default: these tests
+  /// are about dictation.
+  @override
+  MeetingCandidate? pendingMeetingPrompt;
+
+  @override
+  bool isMeetingActive = false;
 
   set state(AppState value) {
     _state = value;

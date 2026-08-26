@@ -49,6 +49,15 @@ class AppDelegate: FlutterAppDelegate {
       binaryMessenger: controller.engine.binaryMessenger
     )
 
+    // Folder chooser for the settings window's save-location field.
+    let folderPickerChannel = FlutterMethodChannel(name: "com.ultrawhisper.folder_picker",
+                                                   binaryMessenger: controller.engine.binaryMessenger)
+
+    folderPickerChannel.setMethodCallHandler({
+      (call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
+      FolderPickerHandler.handleMethodCall(call: call, result: result)
+    })
+
     // Attempt to restore volume on launch (crash recovery)
     VolumeController.restoreVolumeOnLaunch()
 
@@ -89,6 +98,10 @@ class AppDelegate: FlutterAppDelegate {
 
     statusBarController?.onStopRecording = { [weak self] in
       self?.statusBarEventChannel?.invokeMethod("stopRecording", arguments: nil)
+    }
+
+    statusBarController?.onToggleMeeting = { [weak self] in
+      self?.statusBarEventChannel?.invokeMethod("toggleMeeting", arguments: nil)
     }
 
     statusBarController?.onOpenSettings = { [weak self] in

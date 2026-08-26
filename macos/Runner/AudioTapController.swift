@@ -11,14 +11,24 @@ import ScreenCaptureKit
 /// wrong, and it cost real time — a tap capturing a 440 Hz tone was verified
 /// working on 2026-08-23, in a standalone testbed on this same hardware.
 ///
-/// What that testbed showed: no Audio Recording grant means silence, and
-/// granting it fixes the capture outright. Why THIS app never held such a grant
-/// is the leading, but not proven, part: it was ad-hoc signed, and an ad-hoc
-/// designated requirement is a list of cdhashes, so every rebuild invalidates
-/// the grant while System Settings still shows it enabled.
+/// The cause was settled the same day by reading the TCC database directly:
 ///
-/// `AudioTapController` below is therefore the preferred path, not a doomed
-/// one. See `../UltraWhisper-audiocapture-test/HANDOFF-ULTRAWHISPER.md`.
+///     sqlite3 ~/Library/Application\ Support/com.apple.TCC/TCC.db \
+///       "select service, client, auth_value from access
+///        where client like '%ultrawhisper%';"
+///
+/// `com.ultrawhisper.ultrawhisper` had a `kTCCServiceMicrophone` row and **no
+/// `kTCCServiceAudioCapture` row at all** — while the testbed's
+/// `com.sakot.audiocaptureTest` had one, which is the entire difference between
+/// the two. Audio Recording and Microphone are separate TCC services; holding
+/// the mic grant says nothing about taps. Worse, the rows that did exist were
+/// written while the app was ad-hoc signed, so their `csreq` is a list of
+/// cdhashes that every single rebuild invalidates, and System Settings keeps
+/// showing the toggle as on.
+///
+/// So: never read "the toggle is on" as proof, and never read silence as a code
+/// bug before checking that row. `AudioTapController` below is the preferred
+/// path, not a doomed one.
 ///
 /// This class stays because a fallback is still worth having: SCK needs only
 /// macOS 13 (below the 14.4 taps floor) and a permission that can be checked
@@ -149,12 +159,25 @@ final class AudioTapController {
         let name: String
         let runningOutput: Bool
 
+        /// Whether this process is currently pulling from an input device.
+        ///
+        /// Paired with `runningOutput` this is the meeting detector: a real-time
+        /// call is the one common situation where a SINGLE process both captures
+        /// the mic and plays audio. Music is output-only, dictation is
+        /// input-only, and a browser in a Meet call is both — which is why the
+        /// signal works without knowing any app's bundle ID.
+        let runningInput: Bool
+
+        /// Whether this process looks like a live call right now.
+        var looksLikeMeeting: Bool { runningInput && runningOutput }
+
         var asDictionary: [String: Any] {
             [
                 "pid": Int(pid),
                 "bundleId": bundleID as Any,
                 "name": name,
                 "runningOutput": runningOutput,
+                "runningInput": runningInput,
             ]
         }
     }
@@ -176,6 +199,61 @@ final class AudioTapController {
     private var sawAudio = false
     private var silenceReported = false
     private var loggedBufferShape = false
+    private var loggedCallbacks = 0
+
+    /// Which buffer of the aggregate's input list carries the tap.
+    ///
+    /// Latched on the first callback that contains audio, exactly as the
+    /// known-good testbed does. The aggregate is built from the default output
+    /// device AND the tap, and any input streams that device contributes are
+    /// listed first — a headset with a microphone contributes one — so
+    /// `mBuffers[0]` can be somebody else's silence while the tap sits later.
+    /// Reading index 0 and concluding "the tap is silent" is the trap.
+    private var selectedBuffer = 0
+    private var bufferLatched = false
+
+    /// Names the running .app, so re-signed variants launched to bisect a
+    /// permission problem each get their own diagnostic file.
+    private static let variantName =
+        Bundle.main.bundleURL.deletingPathExtension().lastPathComponent
+
+    /// Appended to `~/.ultrawhisper_tap_diag-<variant>`, which is the only channel that
+    /// survives an `open`-launched app: stdout is discarded and NSLog has not
+    /// been reaching the unified log from this bundle.
+    private static func diag(_ line: String) {
+        NSLog("AudioTapController: \(line)")
+        let path = NSHomeDirectory() + "/.ultrawhisper_tap_diag-" + Self.variantName
+        guard let data = (line + "\n").data(using: .utf8) else { return }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
+    /// How many input streams the aggregate exposes, and how wide each is.
+    ///
+    /// This is the question the buffer-shape log cannot answer on its own:
+    /// whether the tap is even present in the aggregate's input list.
+    private static func inputStreamShape(_ device: AudioObjectID) -> String {
+        var addr = address(kAudioDevicePropertyStreamConfiguration,
+                           kAudioObjectPropertyScopeInput)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &addr, 0, nil, &size) == noErr,
+              size > 0 else { return "unavailable" }
+        let raw = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(device, &addr, 0, nil, &size, raw) == noErr else {
+            return "unreadable"
+        }
+        let list = UnsafeMutableAudioBufferListPointer(
+            raw.assumingMemoryBound(to: AudioBufferList.self))
+        let parts = list.enumerated().map { "[\($0.offset)] \($0.element.mNumberChannels)ch" }
+        return "\(list.count) stream(s): \(parts.joined(separator: " "))"
+    }
     private var captureStarted: CFAbsoluteTime = 0
     private let lock = NSLock()
 
@@ -240,7 +318,8 @@ final class AudioTapController {
                 pid: pid,
                 bundleID: bundleID,
                 name: name,
-                runningOutput: scalar(object, address(kAudioProcessPropertyIsRunningOutput), UInt32(0)) != 0
+                runningOutput: scalar(object, address(kAudioProcessPropertyIsRunningOutput), UInt32(0)) != 0,
+                runningInput: scalar(object, address(kAudioProcessPropertyIsRunningInput), UInt32(0)) != 0
             )
         }
     }
@@ -267,8 +346,14 @@ final class AudioTapController {
         description.isPrivate = true
         description.muteBehavior = .unmuted
 
+        // Start each launch with a fresh diagnostic file; otherwise runs pile up
+        // and it is not obvious which lines belong to the capture being debugged.
+        try? "".write(toFile: NSHomeDirectory() + "/.ultrawhisper_tap_diag-" + Self.variantName,
+                      atomically: true, encoding: .utf8)
+
         var probeID = AudioObjectID(kAudioObjectUnknown)
         let status = AudioHardwareCreateProcessTap(description, &probeID)
+        Self.diag("preflight createProcessTap status=\(status)")
         if probeID != AudioObjectID(kAudioObjectUnknown) {
             AudioHardwareDestroyProcessTap(probeID)
         }
@@ -278,18 +363,28 @@ final class AudioTapController {
 
     // MARK: - Capture
 
+    /// Start capturing. An empty [processObjectIDs] means a GLOBAL tap of
+    /// everything, which exists purely to split one diagnosis: a global tap
+    /// that hears audio while a per-process tap of the same playing app hears
+    /// zeroes rules the permission out and points at process targeting, and a
+    /// global tap that is also silent rules targeting out. Nothing in normal
+    /// use wants a global tap — it would put every notification sound in the
+    /// "them" track, which is the whole reason taps beat ScreenCaptureKit.
     func startCapture(processObjectIDs: [AudioObjectID]) throws {
-        guard !processObjectIDs.isEmpty else {
-            throw error(-1, "No audio processes to tap.")
-        }
         stopCapture()
 
-        let description = CATapDescription(monoMixdownOfProcesses: processObjectIDs)
+        let description = processObjectIDs.isEmpty
+            ? CATapDescription(monoGlobalTapButExcludeProcesses: [])
+            : CATapDescription(monoMixdownOfProcesses: processObjectIDs)
         description.name = "UltraWhisper Meeting Tap"
         description.isPrivate = true            // never appears as a system-wide device
         description.muteBehavior = .unmuted     // the user must still HEAR the meeting
 
+        Self.diag("--- startCapture "
+        + (processObjectIDs.isEmpty ? "GLOBAL" : "\(processObjectIDs.count) process(es)") + " ---")
+
         var status = AudioHardwareCreateProcessTap(description, &tapID)
+        Self.diag("createProcessTap status=\(status) tapID=\(tapID)")
         guard status == noErr else {
             throw error(status, "Could not create the audio tap.")
         }
@@ -343,10 +438,14 @@ final class AudioTapController {
         }
 
         status = AudioHardwareCreateAggregateDevice(settings as CFDictionary, &aggregateID)
+        Self.diag("createAggregate status=\(status) aggregateID=\(aggregateID) "
+            + "mainSubDevice=\(outputUID ?? "none")")
         guard status == noErr else {
             stopCapture()
             throw error(status, "Could not create the capture device.")
         }
+        Self.diag("aggregate input streams: \(Self.inputStreamShape(aggregateID))")
+        Self.diag("tap format: \(source)")
 
         // `kAudioTapPropertyFormat` is what the tap ADVERTISES, and it is not
         // always the clock the aggregate device actually runs on. Believing it
@@ -382,6 +481,9 @@ final class AudioTapController {
         sawAudio = false
         silenceReported = false
         loggedBufferShape = false
+        loggedCallbacks = 0
+        selectedBuffer = 0
+        bufferLatched = false
         captureStarted = CFAbsoluteTimeGetCurrent()
 
         status = AudioDeviceCreateIOProcIDWithBlock(&ioProcID, aggregateID, nil) {
@@ -394,80 +496,166 @@ final class AudioTapController {
         }
 
         status = AudioDeviceStart(aggregateID, ioProcID)
+        Self.diag("deviceStart status=\(status)")
         guard status == noErr else {
             stopCapture()
             throw error(status, "Could not start the capture device.")
         }
-        NSLog("AudioTapController: capturing \(processObjectIDs.count) process(es) at \(source.sampleRate) Hz")
+        Self.diag("capturing at \(source.sampleRate) Hz")
     }
 
     private func handle(_ bufferList: UnsafePointer<AudioBufferList>) {
         guard let sourceFormat, let targetFormat, let converter else { return }
 
-        // Log the input list's shape once per capture. This retires a theory
-        // that otherwise costs an afternoon every time the tap looks silent:
-        // that the audio is really arriving in a later buffer, because the
-        // aggregate's output sub-device contributes streams ahead of the tap,
-        // and reading `mBuffers` (index 0 only, as below) sees someone else's
-        // silence. On this machine it prints `1 buffer(s): [0] 1ch 2048B`, so
-        // index 0 is correct here — but the log makes that checkable rather
-        // than assumed if the audio setup ever changes.
-        if !loggedBufferShape {
-            loggedBufferShape = true
-            let buffers = UnsafeMutableAudioBufferListPointer(
-                UnsafeMutablePointer(mutating: bufferList))
-            // Per-buffer RAW peak, read straight off the AudioBufferList before
-            // any conversion. This is the question the self-test cannot answer:
-            // whether Core Audio is handing us zeroes, or whether we are
-            // manufacturing them somewhere between here and the int16 output.
+        let buffers = UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: bufferList))
+
+        // Log the first few callbacks, not just the first.
+        //
+        // One sample of the input list cannot tell "the tap delivers zeroes"
+        // apart from "the tap had not started producing yet when we looked" —
+        // an aggregate device runs its IO cycle before the tap's first buffer
+        // lands. Several consecutive callbacks can.
+        if loggedCallbacks < 8 {
+            loggedCallbacks += 1
             let shape = buffers.enumerated().map { index, buffer -> String in
-                var peak: Float = 0
-                if let data = buffer.mData {
-                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                    data.withMemoryRebound(to: Float.self, capacity: count) { floats in
-                        for i in 0..<count where abs(floats[i]) > peak { peak = abs(floats[i]) }
-                    }
-                }
-                return "[\(index)] \(buffer.mNumberChannels)ch \(buffer.mDataByteSize)B rawPeak=\(peak)"
+                "[\(index)] \(buffer.mNumberChannels)ch \(buffer.mDataByteSize)B "
+                    + "peak=\(peak(of: buffer))"
             }.joined(separator: "  ")
-            let line = "buffers=\(buffers.count)  \(shape)\n"
-                + "sourceFormat=\(sourceFormat)\ntargetFormat=\(targetFormat)\n"
-            NSLog("AudioTapController: \(line)")
-            try? line.write(
-                toFile: NSHomeDirectory() + "/.ultrawhisper_tap_diag",
-                atomically: true, encoding: .utf8)
+            Self.diag("cb\(loggedCallbacks) buffers=\(buffers.count)  \(shape)")
+            if !loggedBufferShape {
+                loggedBufferShape = true
+                Self.diag("sourceFormat=\(sourceFormat) targetFormat=\(targetFormat)")
+            }
+        }
+
+        // Latch the first buffer that actually carries audio. See the comment
+        // on `selectedBuffer`: index 0 can belong to an input stream the output
+        // sub-device contributes rather than to the tap.
+        if !bufferLatched {
+            for (index, buffer) in buffers.enumerated() where peak(of: buffer) > Self.silenceFloor {
+                selectedBuffer = index
+                bufferLatched = true
+                if index != 0 {
+                    Self.diag("audio is in buffer \(index), not buffer 0 — "
+                        + "reading index 0 alone would have looked like silence")
+                }
+                break
+            }
+        }
+
+        guard selectedBuffer < buffers.count else { return }
+        let buffer = buffers[selectedBuffer]
+        guard buffer.mDataByteSize > 0 else { return }
+
+        // The tap's format describes its own stream; if the buffer we settled
+        // on disagrees about channel count, follow the buffer.
+        let inputFormat: AVAudioFormat
+        if buffer.mNumberChannels == sourceFormat.channelCount {
+            inputFormat = sourceFormat
+        } else {
+            var asbd = sourceFormat.streamDescription.pointee
+            asbd.mChannelsPerFrame = buffer.mNumberChannels
+            asbd.mBytesPerFrame = buffer.mNumberChannels * 4
+            asbd.mBytesPerPacket = asbd.mBytesPerFrame
+            guard let adjusted = AVAudioFormat(streamDescription: &asbd) else { return }
+            inputFormat = adjusted
         }
 
         let frames = AVAudioFrameCount(
-            bufferList.pointee.mBuffers.mDataByteSize / max(1, sourceFormat.streamDescription.pointee.mBytesPerFrame))
-        guard frames > 0,
-              let input = AVAudioPCMBuffer(pcmFormat: sourceFormat, bufferListNoCopy: bufferList)
-        else { return }
+            buffer.mDataByteSize / max(1, inputFormat.streamDescription.pointee.mBytesPerFrame))
+        guard frames > 0 else { return }
 
-        noteSilence(in: input, frames: frames)
-
-        let capacity = AVAudioFrameCount(
-            (Double(frames) * targetFormat.sampleRate / sourceFormat.sampleRate).rounded(.up) + 32)
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
-
-        var pulled = false
-        var conversionError: NSError?
-        converter.convert(to: output, error: &conversionError) { _, status in
-            if pulled {
-                status.pointee = .noDataNow
+        var single = AudioBufferList(mNumberBuffers: 1, mBuffers: buffer)
+        let converted: Data? = withUnsafePointer(to: &single) { pointer -> Data? in
+            guard let input = AVAudioPCMBuffer(pcmFormat: inputFormat, bufferListNoCopy: pointer)
+            else {
+                if loggedCallbacks <= 8 { Self.diag("   → could not wrap the buffer list") }
                 return nil
             }
-            pulled = true
-            status.pointee = .haveData
-            return input
-        }
-        guard conversionError == nil,
-              output.frameLength > 0,
-              let channel = output.int16ChannelData
-        else { return }
 
-        let byteCount = Int(output.frameLength) * MemoryLayout<Int16>.size
-        onAudio?(Data(bytes: channel[0], count: byteCount))
+            // The exact shape the converter is being handed. A wrong
+            // mBytesPerFrame silently inflates frameLength and the converter
+            // then reads past the real samples, which is one of the few ways
+            // this produces a full-length run of zeroes.
+            if loggedCallbacks <= 8 {
+                let asbd = inputFormat.streamDescription.pointee
+                Self.diag("   input frameLength=\(input.frameLength) computedFrames=\(frames) "
+                    + "bytesPerFrame=\(asbd.mBytesPerFrame) channels=\(asbd.mChannelsPerFrame) "
+                    + "flags=\(asbd.mFormatFlags) interleaved=\(!inputFormat.isInterleaved ? "no" : "yes") "
+                    + "floatChannelData=\(input.floatChannelData == nil ? "NIL" : "ok")")
+            }
+
+            noteSilence(in: input, frames: frames)
+
+            let capacity = AVAudioFrameCount(
+                (Double(frames) * targetFormat.sampleRate / inputFormat.sampleRate).rounded(.up) + 32)
+            guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity)
+            else { return nil }
+
+            var pulled = false
+            var conversionError: NSError?
+            converter.convert(to: output, error: &conversionError) { _, status in
+                if pulled {
+                    status.pointee = .noDataNow
+                    return nil
+                }
+                pulled = true
+                status.pointee = .haveData
+                return input
+            }
+            if loggedCallbacks <= 8 {
+                Self.diag("   convert err=\(conversionError?.code.description ?? "none") "
+                    + "outFrames=\(output.frameLength)/\(capacity) "
+                    + "int16ChannelData=\(output.int16ChannelData == nil ? "NIL" : "ok")")
+            }
+
+            guard conversionError == nil,
+                  output.frameLength > 0,
+                  let channel = output.int16ChannelData
+            else { return nil }
+
+            return Data(bytes: channel[0], count: Int(output.frameLength) * MemoryLayout<Int16>.size)
+        }
+
+        // Log what SURVIVED the conversion, not just what arrived.
+        //
+        // The raw buffer log above proved the tap works while the delivered
+        // audio was still all zeroes — so the interesting number is the one
+        // after resampling to 16 kHz int16, and logging only the input hid a
+        // bug in this function for several rounds of debugging.
+        if loggedCallbacks <= 8 {
+            if let converted {
+                var loudest: Int16 = 0
+                converted.withUnsafeBytes { raw in
+                    let samples = raw.bindMemory(to: Int16.self)
+                    for sample in samples {
+                        let magnitude = sample == Int16.min ? Int16.max : abs(sample)
+                        if magnitude > loudest { loudest = magnitude }
+                    }
+                }
+                Self.diag("   → converted \(converted.count)B peak=\(loudest)/32767")
+            } else {
+                Self.diag("   → conversion produced nothing")
+            }
+        }
+
+        if let converted { onAudio?(converted) }
+    }
+
+    /// Loudest absolute sample in one float32 buffer.
+    private func peak(of buffer: AudioBuffer) -> Float {
+        guard let data = buffer.mData else { return 0 }
+        let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+        guard count > 0 else { return 0 }
+        var loudest: Float = 0
+        data.withMemoryRebound(to: Float.self, capacity: count) { floats in
+            for index in 0..<count {
+                let magnitude = abs(floats[index])
+                if magnitude > loudest { loudest = magnitude }
+            }
+        }
+        return loudest
     }
 
     /// Watch for the all-zeroes signature of a permission denial.

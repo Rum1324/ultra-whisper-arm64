@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import '../models/settings.dart';
@@ -530,6 +532,66 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           const SizedBox(height: 32),
 
           // ADVANCED SECTION
+          _buildSectionHeader('Meetings'),
+          const SizedBox(height: 16),
+
+          CheckboxListTile(
+            title: const Text(
+              'Detect meetings automatically',
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'Offer to record when one app is using the microphone and '
+              'playing audio at the same time.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            value: _settings.meetingAutoDetect,
+            onChanged: (value) {
+              _updateSettings(
+                  _settings.copyWith(meetingAutoDetect: value ?? true));
+            },
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
+          CheckboxListTile(
+            title: const Text(
+              'Save transcripts and notes',
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'The transcript is written when recording stops, before notes '
+              'are generated.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            value: _settings.saveMeetingTranscripts,
+            onChanged: (value) {
+              _updateSettings(
+                  _settings.copyWith(saveMeetingTranscripts: value ?? true));
+            },
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
+          const SizedBox(height: 16),
+          _buildLabel('Save location'),
+          const SizedBox(height: 8),
+          _buildSaveLocationField(),
+
+          const SizedBox(height: 24),
+          _buildLabel('Notes model (Ollama)'),
+          const SizedBox(height: 4),
+          const Padding(
+            padding: EdgeInsets.only(left: 12.0, bottom: 8.0),
+            child: Text(
+              'Notes need Ollama running locally with this model pulled. '
+              'Transcription is unaffected if it is missing.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ),
+          _buildSummaryModelField(),
+
+          const SizedBox(height: 32),
           _buildSectionHeader('Advanced'),
           const SizedBox(height: 16),
           _buildLabel('Post-processing Options'),
@@ -594,6 +656,93 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           ),
           _buildCustomTermsField(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSaveLocationField() {
+    final configured = _settings.meetingSaveDirectory.trim();
+    final shown = configured.isEmpty ? _defaultSaveDirectory : configured;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            child: Text(
+              shown,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: _pickSaveLocation,
+          child: const Text('Choose…'),
+        ),
+        if (configured.isNotEmpty)
+          TextButton(
+            onPressed: () =>
+                _updateSettings(_settings.copyWith(meetingSaveDirectory: '')),
+            child: const Text('Default'),
+          ),
+      ],
+    );
+  }
+
+  /// Ask the main window to run an NSOpenPanel. This window has its own Flutter
+  /// engine and cannot reach the native channels registered on the main one.
+  Future<void> _pickSaveLocation() async {
+    try {
+      final chosen = await DesktopMultiWindow.invokeMethod(
+        0,
+        'pick_directory',
+        _settings.meetingSaveDirectory.trim().isEmpty
+            ? _defaultSaveDirectory
+            : _settings.meetingSaveDirectory,
+      );
+      // null means the panel was cancelled, which must not clear the setting.
+      if (chosen is String && chosen.isNotEmpty) {
+        _updateSettings(_settings.copyWith(meetingSaveDirectory: chosen));
+      }
+    } catch (e) {
+      debugPrint('Could not open the folder picker: $e');
+    }
+  }
+
+  String get _defaultSaveDirectory {
+    final home = Platform.environment['HOME'] ?? '~';
+    return '$home/Documents/UltraWhisper';
+  }
+
+  Widget _buildSummaryModelField() {
+    return TextFormField(
+      initialValue: _settings.meetingSummaryModel,
+      style: const TextStyle(color: Colors.white, fontSize: 13),
+      decoration: InputDecoration(
+        hintText: 'gemma4:e2b',
+        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.06),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(6),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+      ),
+      onChanged: (value) => _updateSettings(
+        _settings.copyWith(meetingSummaryModel: value.trim()),
       ),
     );
   }

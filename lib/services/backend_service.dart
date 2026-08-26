@@ -193,84 +193,153 @@ class BackendService {
     }
   }
   
-  Future<String> _getBackendPath() async {
-    // In development, we'll assume the backend is in a relative path
-    // In production, it would be embedded in the app bundle
-    if (kDebugMode) {
-      // Development path - look for backend relative to project root
-      // You may need to adjust this path based on your project location
-      final currentDir = Directory.current.path;
-      return '$currentDir/backend/server.py';
-    } else {
-      // Production path - embedded in app bundle
-      // Get the path to the executable to determine bundle location
-      final executablePath = Platform.resolvedExecutable;
-      final executableDir = File(executablePath).parent.path;
+  /// The directory holding the running executable.
+  ///
+  /// Every path below is derived from this rather than from
+  /// `Directory.current`. The working directory is the project root under
+  /// `flutter run` but `/` when the app is launched by Finder or `open` — so a
+  /// cwd-relative debug path resolved to `/backend/server.py`, the backend
+  /// never started, and the app came up in its error state showing red
+  /// waveform bars. Launching with `open` is not an edge case: it is the only
+  /// way to test macOS permissions, because TCC attributes a grant to the
+  /// responsible process, which for a shell launch is the terminal.
+  String get _executableDir => File(Platform.resolvedExecutable).parent.path;
 
-      // In a macOS app bundle: Contents/MacOS/executable
-      // We need to go to: Contents/Resources/backend/server.py (v3 uses root backend dir)
-      final backendPath = '$executableDir/../Resources/backend/server.py';
+  /// `Contents/Resources/backend` inside the app bundle. Populated on every
+  /// build, Debug included, by macos/Scripts/copy_backend.sh.
+  String get _bundledBackendRoot =>
+      path.normalize(path.join(_executableDir, '..', 'Resources', 'backend'));
 
-      AppLogger.debug('Resolved backend path: $backendPath');
-      return backendPath;
+  String? _backendRoot;
+
+  /// The checkout this build came from, or null for an installed copy.
+  ///
+  /// Found by walking up from the executable — a Debug build sits at
+  /// `build/macos/Build/Products/Debug/UltraWhisper.app/Contents/MacOS` inside
+  /// the project — and matching on marker files rather than counting parents,
+  /// so a changed build layout does not silently pick the wrong directory.
+  Future<String?> _findSourceRoot() async {
+    var dir = Directory(_executableDir);
+    for (var depth = 0; depth < 12; depth++) {
+      final parent = dir.parent;
+      if (parent.path == dir.path) break;
+      dir = parent;
+      if (await File(path.join(dir.path, 'pubspec.yaml')).exists() &&
+          await File(path.join(dir.path, 'backend', 'server.py')).exists()) {
+        return dir.path;
+      }
     }
+    return null;
   }
 
-  Future<String> _getPythonPath() async {
-    // Try bundled Python first (for self-contained distribution)
-    if (!kDebugMode) {
-      // Production: Use bundled Python
-      final executablePath = Platform.resolvedExecutable;
-      final executableDir = File(executablePath).parent.path;
-      final bundledPython = '$executableDir/../Resources/python/bin/python3';
+  /// The directory containing `server.py`, whichever copy is actually present.
+  ///
+  /// In Debug the checkout wins so backend edits take effect on an app restart
+  /// without a full rebuild; otherwise the bundled copy is used. The working
+  /// directory is consulted last and only as a safety net.
+  Future<String> _resolveBackendRoot() async {
+    if (_backendRoot != null) return _backendRoot!;
 
-      if (await File(bundledPython).exists()) {
-        AppLogger.debug('Using bundled Python: $bundledPython');
-        return bundledPython;
-      } else {
-        AppLogger.warning('Bundled Python not found at $bundledPython, falling back to system Python');
+    final candidates = <String>[
+      if (kDebugMode)
+        ...[
+          for (final root in [await _findSourceRoot()])
+            if (root != null) path.join(root, 'backend'),
+        ],
+      _bundledBackendRoot,
+      path.join(Directory.current.path, 'backend'),
+    ];
+
+    for (final candidate in candidates) {
+      if (await File(path.join(candidate, 'server.py')).exists()) {
+        AppLogger.debug('Resolved backend root: $candidate');
+        _backendRoot = candidate;
+        return candidate;
       }
     }
 
-    // Development or fallback: Use system Python
-    AppLogger.debug('Using system Python: python3');
+    throw Exception(
+      'Backend script not found. Looked in: ${candidates.join(", ")}',
+    );
+  }
+
+  Future<String> _getBackendPath() async =>
+      path.join(await _resolveBackendRoot(), 'server.py');
+
+  Future<String> _getPythonPath() async {
+    // The bundled interpreter carries websockets and numpy, so preferring it in
+    // Debug too means the app runs the same Python it ships with instead of
+    // whatever `python3` happens to be first on PATH.
+    final bundledPython =
+        path.normalize(path.join(_executableDir, '..', 'Resources', 'python', 'bin', 'python3'));
+
+    if (await File(bundledPython).exists()) {
+      AppLogger.debug('Using bundled Python: $bundledPython');
+      return bundledPython;
+    }
+
+    AppLogger.warning(
+      'Bundled Python not found at $bundledPython, falling back to system Python',
+    );
     return 'python3';
   }
 
   Future<Map<String, String>> _getBackendEnvironment() async {
     final environment = <String, String>{};
 
-    if (!kDebugMode) {
-      // Production: Set DYLD_LIBRARY_PATH for all whisper.cpp and GGML dependencies
-      final executablePath = Platform.resolvedExecutable;
-      final executableDir = File(executablePath).parent.path;
-      final backendBase = '$executableDir/../Resources/backend/whisper.cpp/build';
-
-      // Include all library directories
-      final libraryPaths = [
-        '$backendBase/src',                          // libwhisper
-        '$backendBase/ggml/src',                     // main GGML libs
-        '$backendBase/ggml/src/ggml-blas',          // GGML BLAS
-        '$backendBase/ggml/src/ggml-metal',         // GGML Metal
-      ].join(':');
-
-      environment['DYLD_LIBRARY_PATH'] = libraryPaths;
-      AppLogger.debug('Setting DYLD_LIBRARY_PATH to: $libraryPaths');
-    } else {
-      // Development: Use current working directory for library paths
-      final currentDir = Directory.current.path;
-      final backendBase = '$currentDir/backend/whisper.cpp/build';
-
-      final libraryPaths = [
-        '$backendBase/src',
-        '$backendBase/ggml/src',
-        '$backendBase/ggml/src/ggml-blas',
-        '$backendBase/ggml/src/ggml-metal',
-      ].join(':');
-
-      environment['DYLD_LIBRARY_PATH'] = libraryPaths;
-      AppLogger.debug('Setting DYLD_LIBRARY_PATH to: $libraryPaths');
+    // The libraries have to come from the same tree as the server.py being
+    // run, so this follows whatever _resolveBackendRoot settled on. The bundle
+    // is the fallback because a fresh checkout has no whisper.cpp/build —
+    // those artifacts are untracked and usually symlinked in.
+    var backendBase =
+        path.join(await _resolveBackendRoot(), 'whisper.cpp', 'build');
+    if (!await Directory(path.join(backendBase, 'src')).exists()) {
+      AppLogger.warning(
+        'No whisper.cpp build under $backendBase; using the bundled libraries',
+      );
+      backendBase = path.join(_bundledBackendRoot, 'whisper.cpp', 'build');
     }
+
+    // DYLD_LIBRARY_PATH rather than @rpath alone: the ggml dylibs reference
+    // each other by @rpath, and the Python process loading them has no rpath
+    // of its own to resolve against.
+    final libraryPaths = [
+      path.join(backendBase, 'src'),                        // libwhisper
+      path.join(backendBase, 'ggml', 'src'),                // main GGML libs
+      path.join(backendBase, 'ggml', 'src', 'ggml-blas'),   // GGML BLAS
+      path.join(backendBase, 'ggml', 'src', 'ggml-metal'),  // GGML Metal
+    ].join(':');
+
+    environment['DYLD_LIBRARY_PATH'] = libraryPaths;
+    AppLogger.debug('Setting DYLD_LIBRARY_PATH to: $libraryPaths');
+
+    // Keep Python's bytecode cache OUT of the app bundle.
+    //
+    // This is not a tidiness measure. The bundled interpreter's stdlib and
+    // site-packages live in Contents/Resources/python, and those .pyc files are
+    // SEALED RESOURCES. Python rewrites one whenever the recorded source
+    // mtime/size no longer matches — which the build's own copy step
+    // guarantees — and the moment it does, `codesign -v` fails with "a sealed
+    // resource is missing or invalid".
+    //
+    // What that costs is not obvious and cost this project days: TCC matches a
+    // running app against the code requirement it stored when the permission
+    // was granted, and a broken seal matches nothing. So the app keeps its
+    // grant in System Settings, `auth_value` stays 2 in TCC.db, and every
+    // gated capability fails anyway. For Core Audio process taps that failure
+    // is digital silence rather than an error, which is why the "them" track
+    // read as a permission problem for so long. Verified 2026-08-25: the
+    // signature passed on a fresh build and failed after the first launch,
+    // with the modified .pyc files named in `codesign --verify --verbose=4`.
+    //
+    // PYTHONPYCACHEPREFIX rather than PYTHONDONTWRITEBYTECODE so caching still
+    // happens, just somewhere writable that is not sealed.
+    final cacheRoot = path.join(
+      Platform.environment['HOME'] ?? '/tmp',
+      'Library', 'Caches', 'UltraWhisper', 'pycache',
+    );
+    environment['PYTHONPYCACHEPREFIX'] = cacheRoot;
+    AppLogger.debug('Setting PYTHONPYCACHEPREFIX to: $cacheRoot');
 
     return environment;
   }

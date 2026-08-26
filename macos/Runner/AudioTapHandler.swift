@@ -110,6 +110,16 @@ class AudioTapHandler {
                                     message: error.localizedDescription, details: nil))
             }
 
+        case "startGlobalCapture":
+            // Diagnostic only. See AudioTapController.startCapture.
+            do {
+                try sharedController().startCapture(processObjectIDs: [])
+                result(true)
+            } catch {
+                result(FlutterError(code: "CAPTURE_FAILED",
+                                    message: error.localizedDescription, details: nil))
+            }
+
         case "stopSystemCapture":
             sharedController().stopCapture()
             result(true)

@@ -203,6 +203,20 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
         debugPrint('Settings window requesting current settings');
         return _appService.settings.toJson();
 
+      case 'pick_directory':
+        // The settings window is a desktop_multi_window child with its own
+        // engine, so it has no route to the native channels registered on the
+        // main engine. It asks; this forwards.
+        try {
+          const channel = MethodChannel('com.ultrawhisper.folder_picker');
+          return await channel.invokeMethod<String>('pickDirectory', {
+            'initialPath': call.arguments is String ? call.arguments : '',
+          });
+        } catch (e) {
+          debugPrint('Folder picker failed: $e');
+          return null;
+        }
+
       case 'save_settings':
         // Settings window wants to save new settings
         // Convert from platform channel Map<Object?, Object?> to Map<String, dynamic>

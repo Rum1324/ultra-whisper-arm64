@@ -24,6 +24,15 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
           ?.map((e) => e as String)
           .toList() ??
       const [],
+  meetingAutoDetect: json['meetingAutoDetect'] as bool? ?? true,
+  meetingNeverDetectBundleIds:
+      (json['meetingNeverDetectBundleIds'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList() ??
+      const [],
+  meetingSummaryModel: json['meetingSummaryModel'] as String? ?? 'gemma4:e2b',
+  meetingSaveDirectory: json['meetingSaveDirectory'] as String? ?? '',
+  saveMeetingTranscripts: json['saveMeetingTranscripts'] as bool? ?? true,
   overlayWidth: (json['overlayWidth'] as num?)?.toDouble() ?? 360.0,
   overlayHeight: (json['overlayHeight'] as num?)?.toDouble() ?? 100.0,
   glassOpacity: (json['glassOpacity'] as num?)?.toDouble() ?? 0.05,
@@ -52,6 +61,11 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'punctuation': instance.punctuation,
   'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
+  'meetingAutoDetect': instance.meetingAutoDetect,
+  'meetingNeverDetectBundleIds': instance.meetingNeverDetectBundleIds,
+  'meetingSaveDirectory': instance.meetingSaveDirectory,
+  'saveMeetingTranscripts': instance.saveMeetingTranscripts,
+  'meetingSummaryModel': instance.meetingSummaryModel,
   'overlayWidth': instance.overlayWidth,
   'overlayHeight': instance.overlayHeight,
   'glassOpacity': instance.glassOpacity,
