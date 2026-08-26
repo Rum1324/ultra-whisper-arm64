@@ -30,7 +30,9 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
           ?.map((e) => e as String)
           .toList() ??
       const [],
-  meetingSummaryModel: json['meetingSummaryModel'] as String? ?? 'gemma4:e2b',
+  meetingSummaryModel:
+      json['meetingSummaryModel'] as String? ??
+      'hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_XL',
   meetingSaveDirectory: json['meetingSaveDirectory'] as String? ?? '',
   saveMeetingTranscripts: json['saveMeetingTranscripts'] as bool? ?? true,
   overlayWidth: (json['overlayWidth'] as num?)?.toDouble() ?? 360.0,

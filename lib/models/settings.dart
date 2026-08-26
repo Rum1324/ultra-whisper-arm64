@@ -52,6 +52,13 @@ class Settings {
   /// Ollama tag used for meeting notes. Summarization is the one part of the
   /// app that is not self-contained, and it degrades to a plain transcript when
   /// this model is not pulled — see CLAUDE.md.
+  ///
+  /// Default is Qwen3.6-35B-A3B at Unsloth's Q3_K_XL (~16.8 GB), pulled from
+  /// HuggingFace rather than the Ollama library. A 35B mixture-of-experts with
+  /// ~3B active gives extraction quality a 5B model cannot while still running
+  /// at usable speed. Measured 2026-08-25: gemma4:e2b summarised a transcript
+  /// containing an explicit decision, an owned action item and a date, and
+  /// captured none of the three.
   final String meetingSummaryModel;
 
   // UI settings (not exposed in UI, used internally)
@@ -84,7 +91,7 @@ class Settings {
 
     this.meetingAutoDetect = true,
     this.meetingNeverDetectBundleIds = const [],
-    this.meetingSummaryModel = 'gemma4:e2b',
+    this.meetingSummaryModel = 'hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_XL',
     this.meetingSaveDirectory = '',
     this.saveMeetingTranscripts = true,
 

@@ -726,7 +726,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       initialValue: _settings.meetingSummaryModel,
       style: const TextStyle(color: Colors.white, fontSize: 13),
       decoration: InputDecoration(
-        hintText: 'gemma4:e2b',
+        hintText: 'hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_XL',
         hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.06),
