@@ -51,6 +51,10 @@ class VolumeController {
 
     /// Describes the current default output device.
     struct OutputDeviceInfo {
+        /// Stable identifier that survives reconnects, unlike the name. Empty
+        /// when CoreAudio would not give one — such a device cannot be
+        /// remembered, so callers fall back to the transport heuristic.
+        let uid: String
         let name: String
         let transportType: UInt32
         let isBluetooth: Bool
@@ -89,6 +93,7 @@ class VolumeController {
             || transportType == kAudioDeviceTransportTypeBluetoothLE
 
         return OutputDeviceInfo(
+            uid: deviceUID(for: deviceID),
             name: deviceName(for: deviceID),
             transportType: transportType,
             isBluetooth: isBluetooth
@@ -98,11 +103,25 @@ class VolumeController {
     /// Best-effort device name. Used for logging and UI hints only, so failure
     /// yields an empty string rather than an error.
     private static func deviceName(for deviceID: AudioDeviceID) -> String {
+        cfStringProperty(kAudioObjectPropertyName, for: deviceID)
+    }
+
+    /// Best-effort persistent device identifier, used as the key for
+    /// remembered per-device preferences. Empty on failure so the caller can
+    /// tell "no identity" from a real one.
+    private static func deviceUID(for deviceID: AudioDeviceID) -> String {
+        cfStringProperty(kAudioDevicePropertyDeviceUID, for: deviceID)
+    }
+
+    private static func cfStringProperty(
+        _ selector: AudioObjectPropertySelector,
+        for deviceID: AudioDeviceID
+    ) -> String {
         var name: Unmanaged<CFString>?
         var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
 
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioObjectPropertyName,
+            mSelector: selector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )

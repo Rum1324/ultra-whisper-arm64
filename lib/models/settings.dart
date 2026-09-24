@@ -8,6 +8,72 @@ enum DockVisibilityMode {
   both
 }
 
+/// A remembered audio output device and the ducking answer chosen for it.
+///
+/// The Bluetooth heuristic exists only because a device had no identity to hang
+/// a decision on: headphones and a Bluetooth speaker share a transport but want
+/// opposite answers. Once a device is remembered it gets an explicit answer, and
+/// the transport only supplies the value the row starts life with.
+@JsonSerializable()
+class AudioDevicePref {
+  /// CoreAudio device UID. Stable across reconnects, unlike [name].
+  final String uid;
+
+  /// Last-seen human-readable name, refreshed whenever the device is used so a
+  /// renamed device does not show a stale label in Settings.
+  final String name;
+
+  /// Whether the device was on a Bluetooth transport when last seen. Display
+  /// only — the decision is [skipDuck].
+  final bool isBluetooth;
+
+  /// Skip volume ducking while this device is the output.
+  final bool skipDuck;
+
+  const AudioDevicePref({
+    required this.uid,
+    required this.name,
+    required this.isBluetooth,
+    required this.skipDuck,
+  });
+
+  String get displayName => name.isEmpty ? 'Unknown device' : name;
+
+  AudioDevicePref copyWith({
+    String? uid,
+    String? name,
+    bool? isBluetooth,
+    bool? skipDuck,
+  }) {
+    return AudioDevicePref(
+      uid: uid ?? this.uid,
+      name: name ?? this.name,
+      isBluetooth: isBluetooth ?? this.isBluetooth,
+      skipDuck: skipDuck ?? this.skipDuck,
+    );
+  }
+
+  factory AudioDevicePref.fromJson(Map<String, dynamic> json) =>
+      _$AudioDevicePrefFromJson(json);
+  Map<String, dynamic> toJson() => _$AudioDevicePrefToJson(this);
+}
+
+List<Map<String, dynamic>> _audioDevicePrefsToJson(List<AudioDevicePref> prefs) =>
+    prefs.map((pref) => pref.toJson()).toList();
+
+/// Decodes leniently on purpose. The same settings blob arrives both from
+/// jsonDecode (`Map<String, dynamic>`) and across a platform channel
+/// (`Map<Object?, Object?>`); a strict cast would throw on the latter, and the
+/// settings window answers a load failure by falling back to defaults — which
+/// the next save would then write over every real setting.
+List<AudioDevicePref> _audioDevicePrefsFromJson(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((entry) => AudioDevicePref.fromJson(Map<String, dynamic>.from(entry)))
+      .toList();
+}
+
 @JsonSerializable()
 class Settings {
   // Audio settings
@@ -18,6 +84,17 @@ class Settings {
   /// Skip ducking when the output device is on a Bluetooth transport — audio
   /// through headphones cannot bleed into the microphone.
   final bool skipDuckWhenBluetooth;
+
+  /// Per-device ducking overrides, keyed by CoreAudio device UID.
+  ///
+  /// A device is added the first time it is used, seeded from
+  /// [skipDuckWhenBluetooth] and its transport. From then on the row wins, so
+  /// Bluetooth headphones and a Bluetooth speaker can disagree.
+  ///
+  /// Encoded explicitly: the settings window is a separate engine reached over
+  /// a platform channel, whose codec can carry maps but not AudioDevicePref.
+  @JsonKey(toJson: _audioDevicePrefsToJson, fromJson: _audioDevicePrefsFromJson)
+  final List<AudioDevicePref> audioDevicePrefs;
 
   // Model settings
   final String modelStoragePath;
@@ -31,6 +108,16 @@ class Settings {
   final bool punctuation;
   final bool disfluencyCleanup;
   final List<String> customTerms; // Custom dictionary for domain-specific terms
+
+  /// Leave the transcript on the clipboard after pasting it.
+  ///
+  /// The paste itself always goes through the clipboard, so the only question
+  /// is what sits there once the paste is done. Restoring the previous
+  /// contents keeps a copied link or snippet from being clobbered by dictation,
+  /// but it also means the transcript is gone the moment you look for it — the
+  /// text you just spoke is not recoverable any other way, whereas whatever you
+  /// copied by hand usually is.
+  final bool keepTranscriptOnClipboard;
 
   // Meeting settings
   /// Watch for a process that is capturing the mic and playing audio at the
@@ -78,6 +165,7 @@ class Settings {
     this.duckVolumeDuringRecording = true,
     this.volumeDuckPercentage = 0.1,
     this.skipDuckWhenBluetooth = true,
+    this.audioDevicePrefs = const [],
 
     this.modelStoragePath = '',
 
@@ -88,6 +176,7 @@ class Settings {
     this.punctuation = true,
     this.disfluencyCleanup = true,
     this.customTerms = const [],
+    this.keepTranscriptOnClipboard = true,
 
     this.meetingAutoDetect = true,
     this.meetingNeverDetectBundleIds = const [],
@@ -114,6 +203,7 @@ class Settings {
     bool? duckVolumeDuringRecording,
     double? volumeDuckPercentage,
     bool? skipDuckWhenBluetooth,
+    List<AudioDevicePref>? audioDevicePrefs,
     String? modelStoragePath,
     String? toggleRecordHotkey,
     String? toggleRecordEnterHotkey,
@@ -121,6 +211,7 @@ class Settings {
     bool? punctuation,
     bool? disfluencyCleanup,
     List<String>? customTerms,
+    bool? keepTranscriptOnClipboard,
     bool? meetingAutoDetect,
     List<String>? meetingNeverDetectBundleIds,
     String? meetingSummaryModel,
@@ -140,6 +231,7 @@ class Settings {
       duckVolumeDuringRecording: duckVolumeDuringRecording ?? this.duckVolumeDuringRecording,
       volumeDuckPercentage: volumeDuckPercentage ?? this.volumeDuckPercentage,
       skipDuckWhenBluetooth: skipDuckWhenBluetooth ?? this.skipDuckWhenBluetooth,
+      audioDevicePrefs: audioDevicePrefs ?? this.audioDevicePrefs,
       modelStoragePath: modelStoragePath ?? this.modelStoragePath,
       toggleRecordHotkey: toggleRecordHotkey ?? this.toggleRecordHotkey,
       toggleRecordEnterHotkey: toggleRecordEnterHotkey ?? this.toggleRecordEnterHotkey,
@@ -147,6 +239,8 @@ class Settings {
       punctuation: punctuation ?? this.punctuation,
       disfluencyCleanup: disfluencyCleanup ?? this.disfluencyCleanup,
       customTerms: customTerms ?? this.customTerms,
+      keepTranscriptOnClipboard:
+          keepTranscriptOnClipboard ?? this.keepTranscriptOnClipboard,
       meetingAutoDetect: meetingAutoDetect ?? this.meetingAutoDetect,
       meetingNeverDetectBundleIds:
           meetingNeverDetectBundleIds ?? this.meetingNeverDetectBundleIds,

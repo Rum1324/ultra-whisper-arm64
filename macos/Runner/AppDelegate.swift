@@ -124,6 +124,10 @@ class AppDelegate: FlutterAppDelegate {
       self?.statusBarEventChannel?.invokeMethod("toggleVolumeDuck", arguments: nil)
     }
 
+    statusBarController?.onToggleSkipDuckWhenBluetooth = { [weak self] in
+      self?.statusBarEventChannel?.invokeMethod("toggleSkipDuckWhenBluetooth", arguments: nil)
+    }
+
     NSLog("AppDelegate: Status bar setup completed")
   }
 

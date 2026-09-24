@@ -199,8 +199,11 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
         return true;
 
       case 'get_settings':
-        // Settings window requests current settings
+        // Settings window requests current settings. Register the device in use
+        // first, so the per-device ducking table is never empty on a machine
+        // that simply has not recorded yet.
         debugPrint('Settings window requesting current settings');
+        await _appService.registerCurrentOutputDevice();
         return _appService.settings.toJson();
 
       case 'pick_directory':

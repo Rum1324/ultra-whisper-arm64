@@ -14,6 +14,7 @@ class StatusBarService {
   Function()? onCheckForUpdates;
   Function()? onQuit;
   Function()? onToggleVolumeDuck;
+  Function()? onToggleSkipDuckWhenBluetooth;
 
   StatusBarService() {
     _setupEventChannel();
@@ -66,6 +67,11 @@ class StatusBarService {
       case 'toggleVolumeDuck':
         AppLogger.info('StatusBarService: Volume duck toggle requested from menu bar');
         onToggleVolumeDuck?.call();
+        break;
+
+      case 'toggleSkipDuckWhenBluetooth':
+        AppLogger.info('StatusBarService: Skip-duck-when-Bluetooth toggle requested from menu bar');
+        onToggleSkipDuckWhenBluetooth?.call();
         break;
 
       default:
@@ -121,6 +127,27 @@ class StatusBarService {
       AppLogger.debug('StatusBarService: Volume duck state set to $enabled');
     } catch (e) {
       AppLogger.error('StatusBarService: Failed to set volume duck state', e);
+    }
+  }
+
+  /// Reflect the ducking choice for the current output device.
+  ///
+  /// [deviceName] names the device in the menu title so the item cannot be
+  /// mistaken for a global switch; empty falls back to a generic label.
+  Future<void> setDeviceSkipDuckState({
+    required bool enabled,
+    required String deviceName,
+  }) async {
+    try {
+      await _statusBarChannel.invokeMethod('setDeviceSkipDuckState', {
+        'enabled': enabled,
+        'deviceName': deviceName,
+      });
+      AppLogger.debug(
+        'StatusBarService: Skip-duck state set to $enabled for "$deviceName"',
+      );
+    } catch (e) {
+      AppLogger.error('StatusBarService: Failed to set skip-duck state', e);
     }
   }
 }

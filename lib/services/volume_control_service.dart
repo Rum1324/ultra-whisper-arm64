@@ -3,6 +3,10 @@ import 'package:flutter/foundation.dart';
 
 /// Snapshot of the system's default audio output device.
 class OutputDeviceInfo {
+  /// Stable CoreAudio identifier, empty when the device would not give one.
+  /// A device without a UID cannot be remembered across reconnects.
+  final String uid;
+
   /// Human-readable device name, or an empty string if it could not be read.
   final String name;
 
@@ -13,6 +17,7 @@ class OutputDeviceInfo {
   final bool isBluetooth;
 
   const OutputDeviceInfo({
+    required this.uid,
     required this.name,
     required this.transportType,
     required this.isBluetooth,
@@ -59,6 +64,7 @@ class VolumeControlService {
       if (info == null) return null;
 
       return OutputDeviceInfo(
+        uid: info['uid'] as String? ?? '',
         name: info['name'] as String? ?? '',
         transportType: info['transportType'] as int? ?? 0,
         isBluetooth: info['isBluetooth'] as bool? ?? false,
@@ -99,25 +105,14 @@ class VolumeControlService {
   ///
   /// [percentage] - The percentage to reduce volume to (0.0 to 1.0, default 0.1 = 10%)
   /// [persistent] - Whether to save state for crash recovery (default true)
-  /// [skipWhenBluetooth] - Skip ducking entirely when the output device is on a
-  ///   Bluetooth transport. Audio played through headphones never reaches the
-  ///   microphone, so there is nothing to duck. If the device cannot be
-  ///   inspected we duck anyway, preserving the previous behaviour.
+  ///
+  /// Whether ducking should happen at all is decided by the caller: that answer
+  /// now depends on remembered per-device preferences, and the caller has to
+  /// look the device up anyway to record that it was used.
   Future<void> duckVolumeForRecording({
     required double percentage,
     bool persistent = true,
-    bool skipWhenBluetooth = false,
   }) async {
-    if (skipWhenBluetooth) {
-      final device = await getOutputDeviceInfo();
-      if (device != null && device.isBluetooth) {
-        debugPrint(
-          'VolumeControlService: Skipping duck — Bluetooth output "${device.displayName}"',
-        );
-        return;
-      }
-    }
-
     try {
       await _channel.invokeMethod('duckVolume', {
         'percentage': percentage,

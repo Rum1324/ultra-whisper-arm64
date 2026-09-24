@@ -79,6 +79,7 @@ class VolumeHandler {
         do {
             let info = try VolumeController.getOutputDeviceInfo()
             result([
+                "uid": info.uid,
                 "name": info.name,
                 "transportType": Int(info.transportType),
                 "isBluetooth": info.isBluetooth,

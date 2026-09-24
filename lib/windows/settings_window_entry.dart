@@ -319,12 +319,13 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
               padding: const EdgeInsets.only(left: 24.0),
               child: CheckboxListTile(
                 title: const Text(
-                  'Skip when Bluetooth headphones are connected',
+                  'Skip new Bluetooth devices by default',
                   style: TextStyle(color: Colors.white),
                 ),
                 subtitle: const Text(
                   "System audio can't bleed into the mic through headphones. "
-                  'Turn this off if you use a Bluetooth speaker.',
+                  'This only sets the starting value for a device the first '
+                  'time it is used — the table below decides after that.',
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 value: _settings.skipDuckWhenBluetooth,
@@ -337,6 +338,18 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 controlAffinity: ListTileControlAffinity.leading,
               ),
             ),
+
+            const SizedBox(height: 16),
+            _buildLabel('Output devices'),
+            const SizedBox(height: 4),
+            const Text(
+              'Devices are remembered as you use them. Tick a device to leave '
+              'its volume alone while recording — right for headphones, wrong '
+              'for a speaker the mic can hear.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            _buildDeviceTable(),
 
             const SizedBox(height: 16),
             _buildLabel('Volume level during recording'),
@@ -646,6 +659,30 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
 
           const SizedBox(height: 24),
 
+          _buildLabel('Pasting'),
+          const SizedBox(height: 8),
+          CheckboxListTile(
+            title: const Text(
+              'Keep Transcript on Clipboard',
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'Leave the transcript on the clipboard after pasting, so you can '
+              'paste it again. Turn off to put your previous clipboard back.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            value: _settings.keepTranscriptOnClipboard,
+            onChanged: (value) {
+              _updateSettings(_settings.copyWith(
+                keepTranscriptOnClipboard: value ?? true,
+              ));
+            },
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
+          const SizedBox(height: 24),
+
           _buildLabel('Custom Dictionary'),
           const SizedBox(height: 4),
           const Padding(
@@ -790,6 +827,129 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       ),
       onChanged: (value) => _updateSettings(
         _settings.copyWith(meetingSummaryModel: value.trim()),
+      ),
+    );
+  }
+
+  /// Table of remembered output devices, one row per device.
+  ///
+  /// Deleting a row forgets the device rather than pinning a decision: it comes
+  /// back with the default the next time it is actually used, so the table
+  /// stays as short as the user wants it.
+  Widget _buildDeviceTable() {
+    final devices = _settings.audioDevicePrefs;
+
+    if (devices.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: const Text(
+          'No devices remembered yet. Record once and the device you were '
+          'listening on will appear here.',
+          style: TextStyle(color: Colors.white38, fontSize: 12),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Row(
+              children: const [
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    'Skip',
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'DEVICE',
+                    style: TextStyle(
+                      color: Colors.white38,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                SizedBox(width: 40),
+              ],
+            ),
+          ),
+          for (int i = 0; i < devices.length; i++)
+            _buildDeviceRow(devices[i], i, isLast: i == devices.length - 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeviceRow(AudioDevicePref device, int index, {required bool isLast}) {
+    return Container(
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : Border(
+                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+              ),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 70,
+            child: Checkbox(
+              value: device.skipDuck,
+              onChanged: (value) {
+                final updated = List<AudioDevicePref>.from(_settings.audioDevicePrefs);
+                updated[index] = device.copyWith(skipDuck: value ?? false);
+                _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
+              },
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  device.displayName,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  device.isBluetooth ? 'Bluetooth' : 'Wired or built-in',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16, color: Colors.white38),
+            tooltip: 'Forget this device',
+            splashRadius: 16,
+            onPressed: () {
+              final updated = List<AudioDevicePref>.from(_settings.audioDevicePrefs)
+                ..removeAt(index);
+              _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
+            },
+          ),
+        ],
       ),
     );
   }

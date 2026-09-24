@@ -5,9 +5,17 @@ import 'keystroke_service.dart';
 
 class PasteService {
   final KeystrokeService _keystrokeService = KeystrokeService();
-  Future<void> performPasteAction(String text, {bool pressEnter = false}) async {
+  /// Pastes [text] into the focused app.
+  ///
+  /// When [keepOnClipboard] is true the transcript is left on the clipboard
+  /// afterwards; otherwise whatever was there before the paste is put back.
+  Future<void> performPasteAction(
+    String text, {
+    bool pressEnter = false,
+    bool keepOnClipboard = true,
+  }) async {
     try {
-      await _pasteWithClipboardPreservation(text, pressEnter);
+      await _pasteWithClipboardPreservation(text, pressEnter, keepOnClipboard);
       debugPrint('Paste action completed (pressEnter: $pressEnter)');
     } catch (e) {
       debugPrint('Failed to perform paste action: $e');
@@ -15,12 +23,17 @@ class PasteService {
     }
   }
   
-  Future<void> _pasteWithClipboardPreservation(String text, bool pressEnter) async {
+  Future<void> _pasteWithClipboardPreservation(
+    String text,
+    bool pressEnter,
+    bool keepOnClipboard,
+  ) async {
     try {
       debugPrint('');
       debugPrint('=== PASTE OPERATION STARTING ===');
       debugPrint('Text to paste: "$text"');
       debugPrint('Press Enter after: $pressEnter');
+      debugPrint('Keep transcript on clipboard: $keepOnClipboard');
 
       // 1. Read current clipboard contents
       final originalClipboard = await _getClipboardData();
@@ -66,9 +79,14 @@ class PasteService {
           debugPrint('✅ Step 5: Successfully sent Enter keystroke');
         }
 
-        // 6. Restore clipboard with proper ordering after successful paste
-        debugPrint('⏱️ Step 6: Scheduling clipboard restore in 500ms');
-        _scheduleClipboardRestoreWithOrdering(text, originalClipboard);
+        // 6. Put the previous clipboard back, unless the transcript is meant
+        // to stay there for the user to paste again.
+        if (keepOnClipboard) {
+          debugPrint('📋 Step 6: Leaving transcript on the clipboard');
+        } else {
+          debugPrint('⏱️ Step 6: Scheduling clipboard restore in 500ms');
+          _scheduleClipboardRestoreWithOrdering(text, originalClipboard);
+        }
         debugPrint('=== PASTE OPERATION COMPLETED SUCCESSFULLY ===');
         debugPrint('');
 
@@ -93,7 +111,11 @@ class PasteService {
         
         // Fall back to delayed clipboard restoration for manual pasting
         // Give user more time to paste manually in production
-        _scheduleClipboardRestoreForManualPaste(text, originalClipboard);
+        if (keepOnClipboard) {
+          debugPrint('Leaving transcript on the clipboard for manual pasting');
+        } else {
+          _scheduleClipboardRestoreForManualPaste(text, originalClipboard);
+        }
       }
       
       debugPrint('Clipboard-preserving paste completed');

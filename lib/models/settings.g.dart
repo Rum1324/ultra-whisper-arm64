@@ -6,6 +6,22 @@ part of 'settings.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+AudioDevicePref _$AudioDevicePrefFromJson(Map<String, dynamic> json) =>
+    AudioDevicePref(
+      uid: json['uid'] as String,
+      name: json['name'] as String,
+      isBluetooth: json['isBluetooth'] as bool,
+      skipDuck: json['skipDuck'] as bool,
+    );
+
+Map<String, dynamic> _$AudioDevicePrefToJson(AudioDevicePref instance) =>
+    <String, dynamic>{
+      'uid': instance.uid,
+      'name': instance.name,
+      'isBluetooth': instance.isBluetooth,
+      'skipDuck': instance.skipDuck,
+    };
+
 Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   sampleRate: (json['sampleRate'] as num?)?.toInt() ?? 16000,
   chunkSizeMs: (json['chunkSizeMs'] as num?)?.toInt() ?? 30,
@@ -13,6 +29,9 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   volumeDuckPercentage:
       (json['volumeDuckPercentage'] as num?)?.toDouble() ?? 0.1,
   skipDuckWhenBluetooth: json['skipDuckWhenBluetooth'] as bool? ?? true,
+  audioDevicePrefs: json['audioDevicePrefs'] == null
+      ? const []
+      : _audioDevicePrefsFromJson(json['audioDevicePrefs']),
   modelStoragePath: json['modelStoragePath'] as String? ?? '',
   toggleRecordHotkey: json['toggleRecordHotkey'] as String? ?? '⌥⇧R',
   toggleRecordEnterHotkey: json['toggleRecordEnterHotkey'] as String? ?? '⌥⇧E',
@@ -24,6 +43,7 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
           ?.map((e) => e as String)
           .toList() ??
       const [],
+  keepTranscriptOnClipboard: json['keepTranscriptOnClipboard'] as bool? ?? true,
   meetingAutoDetect: json['meetingAutoDetect'] as bool? ?? true,
   meetingNeverDetectBundleIds:
       (json['meetingNeverDetectBundleIds'] as List<dynamic>?)
@@ -56,6 +76,7 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'duckVolumeDuringRecording': instance.duckVolumeDuringRecording,
   'volumeDuckPercentage': instance.volumeDuckPercentage,
   'skipDuckWhenBluetooth': instance.skipDuckWhenBluetooth,
+  'audioDevicePrefs': _audioDevicePrefsToJson(instance.audioDevicePrefs),
   'modelStoragePath': instance.modelStoragePath,
   'toggleRecordHotkey': instance.toggleRecordHotkey,
   'toggleRecordEnterHotkey': instance.toggleRecordEnterHotkey,
@@ -63,6 +84,7 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'punctuation': instance.punctuation,
   'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
+  'keepTranscriptOnClipboard': instance.keepTranscriptOnClipboard,
   'meetingAutoDetect': instance.meetingAutoDetect,
   'meetingNeverDetectBundleIds': instance.meetingNeverDetectBundleIds,
   'meetingSaveDirectory': instance.meetingSaveDirectory,

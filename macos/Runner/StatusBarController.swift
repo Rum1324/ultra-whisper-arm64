@@ -7,9 +7,11 @@ class StatusBarController {
     private var recordingMenuItem: NSMenuItem?
     private var meetingMenuItem: NSMenuItem?
     private var volumeDuckMenuItem: NSMenuItem?
+    private var skipDuckWhenBluetoothMenuItem: NSMenuItem?
     private var isRecording = false
     private var isMeetingActive = false
     private var volumeDuckEnabled = true  // Default to true
+    private var skipDuckWhenBluetoothEnabled = true  // Default to true
 
     // Callback for menu actions
     var onStartRecording: (() -> Void)?
@@ -20,6 +22,7 @@ class StatusBarController {
     var onCheckForUpdates: (() -> Void)?
     var onQuit: (() -> Void)?
     var onToggleVolumeDuck: (() -> Void)?
+    var onToggleSkipDuckWhenBluetooth: (() -> Void)?
 
     init() {
         setupStatusBar()
@@ -52,6 +55,10 @@ class StatusBarController {
 
         // Create menu
         menu = NSMenu()
+        // Drive enablement ourselves. The Bluetooth sub-option is greyed out
+        // while ducking is off, which AppKit's automatic enabling — it only
+        // checks that the target responds to the action — would undo.
+        menu?.autoenablesItems = false
 
         // Recording toggle menu item
         recordingMenuItem = NSMenuItem(
@@ -84,6 +91,21 @@ class StatusBarController {
         volumeDuckMenuItem?.target = self
         volumeDuckMenuItem?.state = .on  // Default to on (checkmark visible)
         menu?.addItem(volumeDuckMenuItem!)
+
+        // Sub-option of the ducking toggle above, scoped to whatever is playing
+        // audio right now: headphones want ducking skipped, a speaker does not,
+        // and the two cannot share one answer. The title carries the device
+        // name so the item never reads as a global switch. Indented and
+        // disabled-when-parent-is-off to read as subordinate.
+        skipDuckWhenBluetoothMenuItem = NSMenuItem(
+            title: "Skip For Current Output Device",
+            action: #selector(toggleSkipDuckWhenBluetooth),
+            keyEquivalent: ""
+        )
+        skipDuckWhenBluetoothMenuItem?.target = self
+        skipDuckWhenBluetoothMenuItem?.state = .on  // Default to on
+        skipDuckWhenBluetoothMenuItem?.indentationLevel = 1
+        menu?.addItem(skipDuckWhenBluetoothMenuItem!)
 
         menu?.addItem(NSMenuItem.separator())
 
@@ -195,8 +217,25 @@ class StatusBarController {
 
             // Update checkmark state
             self.volumeDuckMenuItem?.state = enabled ? .on : .off
+            // The sub-option is meaningless when nothing is ducked.
+            self.skipDuckWhenBluetoothMenuItem?.isEnabled = enabled
 
             NSLog("StatusBarController: Volume duck state updated to \(enabled)")
+        }
+    }
+
+    func setDeviceSkipDuckState(_ enabled: Bool, deviceName: String) {
+        skipDuckWhenBluetoothEnabled = enabled
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            self.skipDuckWhenBluetoothMenuItem?.state = enabled ? .on : .off
+            self.skipDuckWhenBluetoothMenuItem?.title = deviceName.isEmpty
+                ? "Skip For Current Output Device"
+                : "Skip For \(deviceName)"
+
+            NSLog("StatusBarController: Skip-duck state updated to \(enabled) for \(deviceName)")
         }
     }
 
@@ -219,6 +258,11 @@ class StatusBarController {
     @objc private func toggleVolumeDuck() {
         NSLog("StatusBarController: Volume duck toggle clicked")
         onToggleVolumeDuck?()
+    }
+
+    @objc private func toggleSkipDuckWhenBluetooth() {
+        NSLog("StatusBarController: Skip-duck-when-Bluetooth toggle clicked")
+        onToggleSkipDuckWhenBluetooth?()
     }
 
     @objc private func openSettings() {
@@ -301,6 +345,22 @@ extension StatusBarController {
                 return
             }
             controller.setVolumeDuckState(enabled)
+            result(nil)
+
+        case "setDeviceSkipDuckState":
+            guard let args = call.arguments as? [String: Any],
+                  let enabled = args["enabled"] as? Bool else {
+                result(FlutterError(
+                    code: "INVALID_ARGUMENTS",
+                    message: "Missing enabled argument",
+                    details: nil
+                ))
+                return
+            }
+            controller.setDeviceSkipDuckState(
+                enabled,
+                deviceName: args["deviceName"] as? String ?? ""
+            )
             result(nil)
 
         default:

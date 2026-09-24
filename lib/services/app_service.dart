@@ -54,6 +54,10 @@ class AppService extends ChangeNotifier {
 
   String? _currentSessionId;
   Timer? _recordingTimer;
+
+  /// UID of the output device we last inspected, so the menu bar can be
+  /// refreshed without another CoreAudio round trip.
+  String? _lastOutputDeviceUid;
   StreamSubscription? _audioStreamSubscription;
   WebSocketChannel? _webSocketChannel;
   bool _pressEnterOnPaste = false;
@@ -303,6 +307,7 @@ class AppService extends ChangeNotifier {
       // Update status bar menu with current volume duck state
       AppLogger.debug('Updating status bar volume duck state...');
       await _statusBarService.setVolumeDuckState(_settings.duckVolumeDuringRecording);
+      await _syncDeviceDuckMenuItem(await registerCurrentOutputDevice());
 
       _updateState(_state.copyWith(recordingState: RecordingState.idle));
 
@@ -548,12 +553,18 @@ class AppService extends ChangeNotifier {
 
       // Duck volume if enabled
       if (_settings.duckVolumeDuringRecording) {
-        AppLogger.debug('Ducking system volume to ${(_settings.volumeDuckPercentage * 100).toStringAsFixed(0)}%');
-        await _volumeControlService.duckVolumeForRecording(
-          percentage: _settings.volumeDuckPercentage,
-          persistent: true,
-          skipWhenBluetooth: _settings.skipDuckWhenBluetooth,
-        );
+        final skipDuck = await _resolveSkipDuckForCurrentDevice();
+        if (skipDuck) {
+          AppLogger.debug('Skipping volume duck for the current output device');
+        } else {
+          AppLogger.debug(
+            'Ducking system volume to ${(_settings.volumeDuckPercentage * 100).toStringAsFixed(0)}%',
+          );
+          await _volumeControlService.duckVolumeForRecording(
+            percentage: _settings.volumeDuckPercentage,
+            persistent: true,
+          );
+        }
       }
 
       // Bring window to front during recording if enabled
@@ -785,6 +796,9 @@ class AppService extends ChangeNotifier {
       await startRecording();
     } else if (_state.recordingState == RecordingState.recording) {
       AppLogger.info('Toggling from recording to stop');
+      // The hotkey that stops the recording decides whether Enter follows the
+      // paste, so starting with ⌥⇧E and stopping with ⌥⇧R pastes without Enter.
+      _pressEnterOnPaste = pressEnter;
       await stopRecording();
     } else {
       AppLogger.warning(
@@ -826,7 +840,11 @@ class AppService extends ChangeNotifier {
     // Perform paste action
     try {
       debugPrint('Attempting to perform paste action...');
-      await _pasteService.performPasteAction(text, pressEnter: _pressEnterOnPaste);
+      await _pasteService.performPasteAction(
+        text,
+        pressEnter: _pressEnterOnPaste,
+        keepOnClipboard: _settings.keepTranscriptOnClipboard,
+      );
       debugPrint('Paste action completed successfully');
     } catch (e) {
       debugPrint('❌ Failed to perform paste action: $e');
@@ -885,6 +903,107 @@ class AppService extends ChangeNotifier {
     }
   }
 
+  // MARK: - Per-device volume ducking
+  //
+  // Ducking used to be decided by transport: skip on Bluetooth, duck otherwise.
+  // That conflates headphones with a Bluetooth speaker, which want opposite
+  // answers. A device is remembered the first time it is used — seeded from the
+  // old transport rule — and from then on its own row decides.
+
+  /// Ensure the current output device has a remembered row, and return it.
+  ///
+  /// Returns null when there is no device or it has no UID: such a device
+  /// cannot be keyed, so callers fall back to the transport heuristic rather
+  /// than accumulating unkeyed rows.
+  Future<AudioDevicePref?> registerCurrentOutputDevice() async {
+    final device = await _volumeControlService.getOutputDeviceInfo();
+    _lastOutputDeviceUid = device?.uid.isNotEmpty == true ? device!.uid : null;
+    if (device == null || device.uid.isEmpty) {
+      if (device != null) {
+        AppLogger.debug(
+          'Output device "${device.displayName}" has no UID; not remembering it',
+        );
+      }
+      return null;
+    }
+
+    final prefs = List<AudioDevicePref>.from(_settings.audioDevicePrefs);
+    final index = prefs.indexWhere((pref) => pref.uid == device.uid);
+
+    if (index >= 0) {
+      final existing = prefs[index];
+      // Refresh the label so a renamed device does not read stale in Settings.
+      if (existing.name != device.name || existing.isBluetooth != device.isBluetooth) {
+        prefs[index] = existing.copyWith(
+          name: device.name,
+          isBluetooth: device.isBluetooth,
+        );
+        await _persistSettingsQuietly(
+          _settings.copyWith(audioDevicePrefs: prefs),
+        );
+      }
+      return prefs[index];
+    }
+
+    final added = AudioDevicePref(
+      uid: device.uid,
+      name: device.name,
+      isBluetooth: device.isBluetooth,
+      // Seeded from the rule this table replaces, so nothing changes behaviour
+      // the first time a device is seen.
+      skipDuck: device.isBluetooth && _settings.skipDuckWhenBluetooth,
+    );
+    prefs.add(added);
+    await _persistSettingsQuietly(_settings.copyWith(audioDevicePrefs: prefs));
+    AppLogger.info(
+      'Remembered output device "${added.displayName}" (skipDuck: ${added.skipDuck})',
+    );
+    return added;
+  }
+
+  /// Whether ducking should be skipped for whatever is playing audio right now.
+  Future<bool> _resolveSkipDuckForCurrentDevice() async {
+    final pref = await registerCurrentOutputDevice();
+    if (pref != null) {
+      await _syncDeviceDuckMenuItem(pref);
+      return pref.skipDuck;
+    }
+
+    // Unkeyable device: fall back to the transport rule.
+    final device = await _volumeControlService.getOutputDeviceInfo();
+    if (device == null) return false;
+    return device.isBluetooth && _settings.skipDuckWhenBluetooth;
+  }
+
+  /// The remembered row for the last device we looked at, without going back to
+  /// CoreAudio or creating one. Used to refresh the menu after a settings save:
+  /// re-registering there would resurrect a row the user had just deleted.
+  AudioDevicePref? _currentDevicePrefOrNull() {
+    final uid = _lastOutputDeviceUid;
+    if (uid == null) return null;
+    for (final pref in _settings.audioDevicePrefs) {
+      if (pref.uid == uid) return pref;
+    }
+    return null;
+  }
+
+  /// Persist settings without the full reconfiguration [updateSettings] does.
+  ///
+  /// Remembering a device happens as recording starts; running the usual path
+  /// would tear down and re-register every hotkey mid-utterance.
+  Future<void> _persistSettingsQuietly(Settings newSettings) async {
+    _settings = newSettings;
+    await _settingsService.saveSettings(newSettings);
+    notifyListeners();
+  }
+
+  Future<void> _syncDeviceDuckMenuItem(AudioDevicePref? pref) async {
+    await _statusBarService.setDeviceSkipDuckState(
+      enabled: pref?.skipDuck ?? _settings.skipDuckWhenBluetooth,
+      deviceName: pref?.displayName ?? '',
+    );
+  }
+
   Future<void> updateSettings(Settings newSettings) async {
     final oldSettings = _settings;
     _settings = newSettings;
@@ -915,6 +1034,10 @@ class AppService extends ChangeNotifier {
     // Update status bar menu checkmark if volume duck setting changed
     if (oldSettings.duckVolumeDuringRecording != newSettings.duckVolumeDuringRecording) {
       await _statusBarService.setVolumeDuckState(newSettings.duckVolumeDuringRecording);
+    }
+    if (oldSettings.skipDuckWhenBluetooth != newSettings.skipDuckWhenBluetooth ||
+        oldSettings.audioDevicePrefs != newSettings.audioDevicePrefs) {
+      await _syncDeviceDuckMenuItem(_currentDevicePrefOrNull());
     }
 
     notifyListeners();
@@ -1050,6 +1173,30 @@ class AppService extends ChangeNotifier {
       final newSettings = _settings.copyWith(duckVolumeDuringRecording: newValue);
       await updateSettings(newSettings);
       AppLogger.info('Volume duck toggled to: $newValue');
+    };
+
+    _statusBarService.onToggleSkipDuckWhenBluetooth = () async {
+      AppLogger.info('Status bar: Skip-duck toggle requested for current device');
+      // Re-resolve the device on click rather than trusting the menu title:
+      // the output can change while the menu sits idle, and acting on a stale
+      // name would write the preference onto the wrong device.
+      final pref = await registerCurrentOutputDevice();
+      if (pref == null) {
+        // No keyable device — fall back to flipping the global default.
+        final newValue = !_settings.skipDuckWhenBluetooth;
+        await updateSettings(_settings.copyWith(skipDuckWhenBluetooth: newValue));
+        AppLogger.info('Skip-duck-when-Bluetooth default toggled to: $newValue');
+        return;
+      }
+
+      final prefs = List<AudioDevicePref>.from(_settings.audioDevicePrefs);
+      final index = prefs.indexWhere((entry) => entry.uid == pref.uid);
+      if (index < 0) return;
+      prefs[index] = prefs[index].copyWith(skipDuck: !prefs[index].skipDuck);
+      await updateSettings(_settings.copyWith(audioDevicePrefs: prefs));
+      AppLogger.info(
+        'Skip-duck for "${prefs[index].displayName}" toggled to: ${prefs[index].skipDuck}',
+      );
     };
 
     AppLogger.success('Status bar event handlers configured');
