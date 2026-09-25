@@ -43,6 +43,7 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
           ?.map((e) => e as String)
           .toList() ??
       const [],
+  aiFormatting: json['aiFormatting'] as bool? ?? true,
   keepTranscriptOnClipboard: json['keepTranscriptOnClipboard'] as bool? ?? true,
   meetingAutoDetect: json['meetingAutoDetect'] as bool? ?? true,
   meetingNeverDetectBundleIds:
@@ -84,6 +85,7 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'punctuation': instance.punctuation,
   'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
+  'aiFormatting': instance.aiFormatting,
   'keepTranscriptOnClipboard': instance.keepTranscriptOnClipboard,
   'meetingAutoDetect': instance.meetingAutoDetect,
   'meetingNeverDetectBundleIds': instance.meetingNeverDetectBundleIds,

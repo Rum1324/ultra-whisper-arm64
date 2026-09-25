@@ -63,6 +63,7 @@ PostProcessingOptions _$PostProcessingOptionsFromJson(
   customTerms: (json['customTerms'] as List<dynamic>?)
       ?.map((e) => e as String)
       .toList(),
+  aiFormatting: json['aiFormatting'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$PostProcessingOptionsToJson(
@@ -72,6 +73,7 @@ Map<String, dynamic> _$PostProcessingOptionsToJson(
   'punctuation': instance.punctuation,
   'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
+  'aiFormatting': instance.aiFormatting,
 };
 
 EndSessionCommand _$EndSessionCommandFromJson(Map<String, dynamic> json) =>

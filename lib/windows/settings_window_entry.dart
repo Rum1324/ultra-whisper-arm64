@@ -657,6 +657,26 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             controlAffinity: ListTileControlAffinity.leading,
           ),
 
+          CheckboxListTile(
+            title: const Text(
+              'AI Formatting (local)',
+              style: TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'Polishes each dictation with gemma4:e4b via Ollama — fillers, '
+              'natural punctuation, numbers, Japanese 、。. Adds about a second. '
+              'Needs Ollama with `ollama pull gemma4:e4b`; without it the '
+              'options above are used as before.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+            value: _settings.aiFormatting,
+            onChanged: (value) {
+              _updateSettings(_settings.copyWith(aiFormatting: value ?? true));
+            },
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+
           const SizedBox(height: 24),
 
           _buildLabel('Pasting'),

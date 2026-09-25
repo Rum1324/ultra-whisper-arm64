@@ -368,6 +368,69 @@ def chat_json(
     return _parse_content(envelope)
 
 
+@_never_raises
+def chat_text(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    host: str = DEFAULT_HOST,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    keep_alive: str = DEFAULT_KEEP_ALIVE,
+    temperature: float = DEFAULT_TEMPERATURE,
+) -> str | Unavailable:
+    """
+    Run one non-streaming chat completion and return the reply as plain text.
+
+    Takes a full message list, unlike `chat_json`, because the dictation
+    formatter sends few-shot turns. `think` is pinned off: a reasoning model
+    would otherwise spend seconds deliberating over a one-line clean-up, and
+    for models without a thinking mode Ollama ignores the flag.
+    """
+    envelope = _request_json(
+        host.rstrip("/") + CHAT_PATH,
+        payload={
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "keep_alive": keep_alive,
+            "options": {"temperature": temperature},
+        },
+        timeout=timeout,
+        model=model,
+    )
+    if isinstance(envelope, Unavailable):
+        return envelope
+    message = envelope.get("message") if isinstance(envelope, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        return Unavailable(reason="bad_response", detail="Ollama response carried no message content.")
+    return content
+
+
+@_never_raises
+def preload(
+    *,
+    model: str,
+    host: str = DEFAULT_HOST,
+    timeout: float = 60.0,
+    keep_alive: str = DEFAULT_KEEP_ALIVE,
+) -> bool:
+    """
+    Load `model` into memory without generating anything — the mirror of `unload`.
+
+    An empty generate request is Ollama's documented way to do this. Returns
+    whether Ollama acknowledged; never raises.
+    """
+    body = _request_json(
+        host.rstrip("/") + GENERATE_PATH,
+        payload={"model": model, "keep_alive": keep_alive},
+        timeout=timeout,
+        model=model,
+    )
+    return not isinstance(body, Unavailable)
+
+
 def _parse_content(envelope: Any) -> dict[str, Any] | Unavailable:
     """
     Dig the JSON object out of a `/api/chat` response envelope.

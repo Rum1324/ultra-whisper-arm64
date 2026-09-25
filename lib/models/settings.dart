@@ -109,6 +109,14 @@ class Settings {
   final bool disfluencyCleanup;
   final List<String> customTerms; // Custom dictionary for domain-specific terms
 
+  /// Clean up each dictation with a small local LLM (gemma4:e4b via Ollama):
+  /// fillers, natural punctuation, numbers as digits, Japanese 、。.
+  ///
+  /// On by default but never required: without Ollama or the model, or when
+  /// the model's output fails the backend's sanity check, the rule-based text
+  /// above is pasted unchanged. Costs ~1 s per dictation when it runs.
+  final bool aiFormatting;
+
   /// Leave the transcript on the clipboard after pasting it.
   ///
   /// The paste itself always goes through the clipboard, so the only question
@@ -176,6 +184,7 @@ class Settings {
     this.punctuation = true,
     this.disfluencyCleanup = true,
     this.customTerms = const [],
+    this.aiFormatting = true,
     this.keepTranscriptOnClipboard = true,
 
     this.meetingAutoDetect = true,
@@ -211,6 +220,7 @@ class Settings {
     bool? punctuation,
     bool? disfluencyCleanup,
     List<String>? customTerms,
+    bool? aiFormatting,
     bool? keepTranscriptOnClipboard,
     bool? meetingAutoDetect,
     List<String>? meetingNeverDetectBundleIds,
@@ -239,6 +249,7 @@ class Settings {
       punctuation: punctuation ?? this.punctuation,
       disfluencyCleanup: disfluencyCleanup ?? this.disfluencyCleanup,
       customTerms: customTerms ?? this.customTerms,
+      aiFormatting: aiFormatting ?? this.aiFormatting,
       keepTranscriptOnClipboard:
           keepTranscriptOnClipboard ?? this.keepTranscriptOnClipboard,
       meetingAutoDetect: meetingAutoDetect ?? this.meetingAutoDetect,

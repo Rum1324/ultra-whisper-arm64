@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **UltraWhisper v0.8.0** - a fast, local-only macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
+This is **UltraWhisper v0.9.0** - a fast, local-only macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
 
 **Key Features:**
 - Local-only transcription for privacy and offline use
@@ -105,12 +105,19 @@ cd backend && pytest tests/ -q
 #### Backend Architecture
 - `server.py` - asyncio WebSocket server, session management, energy VAD
 - `whisper_wrapper.py` - ctypes bindings to `libwhisper.dylib`, mirroring `whisper_full_params` field-for-field. Includes `detect_language()` for cheap encode-only pre-detection
-- `postprocess.py` - smart caps, terminal punctuation (JA-aware), disfluency cleanup
+- `postprocess.py` - smart caps, terminal punctuation, disfluency cleanup, and Japanese punctuation (ASCII `, . ? !` → `、。？！`, decided per token so `3.2` and `Node.js` keep their dot)
+- `dictation_formatter.py` - optional LLM clean-up of each dictation (`gemma4:e4b` via Ollama, few-shot prompt); see *AI formatting* below
 - `summarize/` - meeting-note generation; see [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md)
 
 **Two behaviors worth knowing before changing transcription:**
 - Energy VAD rejects a clip whose **loudest** 30ms window has RMS < 0.01. It deliberately measures the window peak, not the whole-clip average — averaging over the silence padding in toggle mode dropped short or quiet utterances.
 - The custom-vocabulary initial prompt is gated to English speech. It wrecked Japanese punctuation when applied unconditionally.
+
+### AI formatting
+
+Settings → Advanced → *AI Formatting (local)*, on by default, runs each dictation through `gemma4:e4b` in Ollama after the rule pass: fillers, natural punctuation, numbers as digits, Japanese 、。. It adds ~1 s. The model and prompt were picked by measurement (2026-09-25, 22 realistic EN/JA dictations through whisper): e4b with rules **plus few-shot examples** passed 22/22; gemma4:e2b and qwen3.5:4b/9b managed 17–18, with e2b translating Japanese into English and the Qwens leaving Japanese fillers. The examples, not the rules, are what made fillers like えーと go away.
+
+The LLM output is **discarded** — and the rule-based text pasted — when Ollama is unreachable, the model is missing, it times out, the language changed, or the output is outside 40–125% of the input size (words for English, characters for Japanese). That size band is what catches a small model *answering* a dictated question or dropping sentences. The rule pass runs again on accepted output, so Japanese punctuation is guaranteed by code rather than by the prompt. `start_session` preloads the model so its load overlaps with speaking.
 
 ### Communication Protocol
 - WebSocket messages use JSON envelope `{type, id, data}` with raw binary frames for audio
@@ -142,7 +149,7 @@ cd backend && pytest tests/ -q
 
 ## Project Status
 
-**Current State**: v0.8.0, shipping. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
+**Current State**: v0.9.0, shipping. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
 
 **In progress**: meeting notes — record a meeting as two tracks, transcribe it, and generate a structured note with a local LLM. Merged to `main`. See [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md) and `backend/summarize/`.
 
@@ -167,6 +174,8 @@ This is deliberate. Bundling a `llama-server` would mean vendoring llama.cpp and
 The notes model is chosen in Settings → Meetings from three presets, all Unsloth Dynamic GGUFs of Qwen3.6-35B-A3B pulled straight from HuggingFace: Balanced (`UD-Q3_K_XL`, ~16.8 GB), Light (`UD-Q2_K_XL`, ~12.3 GB) and Lightest (`UD-IQ2_M`, ~11.5 GB). Sizes are shown in the UI because the model is the one thing in this app the user physically feels — 17 GB resident is real memory pressure on a laptop. See [lib/models/notes_model_presets.dart](lib/models/notes_model_presets.dart).
 
 **The model is evicted from Ollama as soon as a note is finished** (`summarize_meeting(unload_after=True)`, default). Ollama otherwise keeps it resident for its `keep_alive` — five minutes of memory pressure after the note is already on screen. Eviction is a single `keep_alive: 0` request at the end rather than on every call, so the pipeline's classify/map/reduce passes still share one load. Nothing is evicted when nothing was loaded, so an empty transcript or a missing model never puts a request on the wire.
+
+AI formatting of dictation uses the same Ollama, under the same rule: it is never a dependency, and every failure falls back to the rule-based transcript.
 
 Consequently, **summarization degrades gracefully rather than failing**: if Ollama is absent or the model is not pulled, transcription and the raw transcript still work and the app reports that notes are unavailable. Do not make meeting notes a hard dependency of the transcription path.
 

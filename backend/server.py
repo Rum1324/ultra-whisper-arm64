@@ -18,6 +18,7 @@ import websockets
 import numpy as np
 from whisper_wrapper import WhisperModel
 from postprocess import apply_post_processing
+import dictation_formatter
 from meeting import (
     MIN_WINDOW_SAMPLES,
     TRACK_SPEAKERS,
@@ -272,6 +273,13 @@ class WhisperCppBackend:
                 punctuation=post.get('punctuation', True),
                 disfluency_cleanup=post.get('disfluencyCleanup', True),
             )
+            # Off unless the client asks: an older client that doesn't know the
+            # flag must not suddenly start waiting on Ollama.
+            formatting = 'rules'
+            if post.get('aiFormatting', False) and full_text:
+                formatted = dictation_formatter.format_dictation(full_text, custom_terms=custom_terms or None)
+                full_text, formatting = formatted.text, formatted.source
+                logger.info(f"✨ AI formatting: {formatting}")
             segments = result['segments']
             detected_language = result['language']
 
@@ -284,7 +292,8 @@ class WhisperCppBackend:
                 'text': full_text,
                 'segments': segments,
                 'language': detected_language,
-                'avg_logprob': 0.0
+                'avg_logprob': 0.0,
+                'formatting': formatting,
             }
 
         except Exception as e:
@@ -413,6 +422,12 @@ class WebSocketServer:
         # Create new session
         session = self.backend.create_session(session_id, data)
         session.is_active = True
+
+        if (data.get('post') or {}).get('aiFormatting'):
+            # Load the formatting model while the user is still speaking, so the
+            # first dictation after an idle spell doesn't pay the multi-second
+            # load on top of the formatting pass. Fire-and-forget; never raises.
+            asyncio.get_event_loop().run_in_executor(None, dictation_formatter.warm)
 
         logger.info(f"Started transcription session: {session_id}")
 

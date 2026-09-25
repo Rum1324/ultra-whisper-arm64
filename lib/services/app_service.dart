@@ -588,6 +588,7 @@ class AppService extends ChangeNotifier {
           punctuation: _settings.punctuation,
           disfluencyCleanup: _settings.disfluencyCleanup,
           customTerms: _settings.customTerms.isNotEmpty ? _settings.customTerms : null,
+          aiFormatting: _settings.aiFormatting,
         ),
       );
 

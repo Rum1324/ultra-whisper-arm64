@@ -60,12 +60,15 @@ class PostProcessingOptions {
   final bool punctuation;
   final bool disfluencyCleanup;
   final List<String>? customTerms; // Custom dictionary for domain-specific terms
+  /// Clean up the transcript with a local LLM via Ollama after the rule pass.
+  final bool aiFormatting;
 
   const PostProcessingOptions({
     this.smartCaps = true,
     this.punctuation = true,
     this.disfluencyCleanup = true,
     this.customTerms,
+    this.aiFormatting = false,
   });
 
   factory PostProcessingOptions.fromJson(Map<String, dynamic> json) => _$PostProcessingOptionsFromJson(json);
