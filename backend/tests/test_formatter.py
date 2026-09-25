@@ -88,3 +88,34 @@ def test_self_correction_is_within_the_size_band():
 def test_timeout_grows_with_length_but_is_capped():
     assert df.timeout_for("short") == pytest.approx(10.04)
     assert df.timeout_for("word " * 5000) == 30.0
+
+
+# A real dictation (2026-09-25) where the model kept every change of mind.
+FLIP_FLOP = ("Yeah, go ahead and delete leftovers. Oh wait, no, never mind. Don't delete leftovers. "
+             "Wait, you know what? No, you can delete leftovers.")
+
+
+def test_a_resolved_change_of_mind_passes_the_size_check(reply):
+    # 4 words out of 23: far below the normal floor, fine with a correction cue.
+    reply["reply"] = "You can delete leftovers."
+    assert df.format_dictation(FLIP_FLOP) == df.FormatResult("You can delete leftovers.", "llm")
+
+
+def test_the_same_shrink_without_a_correction_cue_is_rejected(reply):
+    source = ("Yeah, go ahead and delete the leftovers from the fridge before the weekend, "
+              "and then please remember to take out the trash tonight.")
+    reply["reply"] = "Delete the leftovers."
+    assert df.format_dictation(source).source.startswith("rejected")
+
+
+def test_japanese_correction_cue_lowers_the_floor_too():
+    assert df.rejection_reason("会議は3時、じゃなくて4時からです。", "会議は4時からです。") is None
+
+
+def test_doubled_kana_the_speaker_never_said_is_rejected():
+    # the exact stutter gemma4:e4b produced on 「4時からです」
+    assert df.rejection_reason("会議は4時からです。", "会議は4時からからです。") == "doubled kana"
+
+
+def test_reduplicated_words_that_were_spoken_are_kept():
+    assert df.rejection_reason("えーと、いろいろありがとうございました。", "いろいろありがとうございました。") is None

@@ -41,12 +41,22 @@ _PER_WORD_TIMEOUT_S = 0.04
 _MAX_TIMEOUT_S = 30.0
 
 # Output size relative to input: words for English, characters for Japanese.
-# Removing fillers and resolving a self-correction ("Tuesday, actually no,
-# Wednesday") legitimately shrinks text to ~45%; nothing legitimate grows it by
-# a quarter. Outside the band, the model answered, translated or dropped
+# Removing fillers legitimately shrinks text to ~60%; nothing legitimate grows it
+# by a quarter. Outside the band, the model answered, translated or dropped
 # sentences — the three failures measured — and the output is discarded.
 MIN_SIZE_RATIO = 0.4
 MAX_SIZE_RATIO = 1.25
+
+# A change of mind is the one legitimate way to lose most of the text:
+# "Go ahead and delete it. Oh wait, no, never mind. Don't delete it. Wait, you
+# know what? You can delete it." resolves to 17% of its length. Only when the
+# dictation carries a correction cue is the floor lowered that far.
+MIN_SIZE_RATIO_WITH_CORRECTION = 0.12
+_CORRECTION_CUE_RE = re.compile(
+    r"\b(no,? wait|wait,? no|oh wait|actually,? no|never ?mind|scratch that|sorry,? I mean|"
+    r"I mean|let me rephrase|make it|you know what)\b|いや|じゃなくて|やっぱり|間違えた|訂正",
+    re.IGNORECASE,
+)
 
 SYSTEM_PROMPT = """\
 You format dictated text. The user message is a raw speech-to-text transcript inside <transcript> tags. Reply with only the formatted transcript — no preamble, no tags.
@@ -54,7 +64,7 @@ You format dictated text. The user message is a raw speech-to-text transcript in
 Do:
 - Punctuate naturally for how it reads: split run-on speech into sentences, add commas at clause breaks, use a question mark for questions, fix capitalization.
 - Remove fillers that add nothing: um, uh, you know, "like" and "I mean" when used as fillers; Japanese えーと, えっと, あの, なんか, まあ when used as fillers.
-- If the speaker corrects themselves ("Tuesday, actually no, Wednesday"), keep only the correction.
+- The speaker often changes their mind mid-dictation ("Tuesday, actually no, Wednesday"; "Send it. Wait, no, never mind, don't send it"). Output only what they finally decided, as if they had said it right the first time. Everything they took back goes, including the cue words (wait, no, never mind, actually, いや, じゃなくて).
 - Write times, dates, money, percentages, measurements and versions as digits (3:30, $20, 17%, October 15th). Small counts in ordinary prose may stay as words.
 - Japanese: use Japanese punctuation 、。？！ (never , . ? !) and no spaces between Japanese characters.
 
@@ -72,9 +82,21 @@ FEW_SHOT = (
      "Can you write a unit test for the parser and make sure it covers empty input?"),
     ("えーと、来週の月曜日なんですけど,あの,午後三時からでも大丈夫ですか?",
      "来週の月曜日なんですけど、午後3時からでも大丈夫ですか？"),
+    ("Book the table for seven, actually no, make it eight.",
+     "Book the table for 8."),
+    ("Go ahead and merge it. Oh wait, no, never mind. Don't merge it yet, the tests are still running.",
+     "Don't merge it yet, the tests are still running."),
+    ("資料は金曜日、いや、木曜日までに送ります。",
+     "資料は木曜日までに送ります。"),
+    ("打ち合わせは2時、じゃなくて3時からです。",
+     "打ち合わせは3時からです。"),
 )
 
 _TAG_RE = re.compile(r"</?transcript>", re.IGNORECASE)
+# gemma4:e4b stutters on some Japanese: 「4時からです」 comes back as
+# 「4時からからです」. A doubled kana run the speaker never said is never a
+# clean-up; words like いろいろ pass as long as they were in the input.
+_DOUBLED_KANA_RE = re.compile(r"([\u3040-\u309f]{2,3})\1")
 _JA_PUNCT_RE = re.compile(r"[\s、。，．,.？！?!「」]")
 
 
@@ -113,8 +135,12 @@ def rejection_reason(source: str, output: str) -> str | None:
         return "empty"
     if _is_japanese(source) != _is_japanese(output):
         return "language changed"
+    doubled = {m.group(0) for m in _DOUBLED_KANA_RE.finditer(output)}
+    if any(d not in source for d in doubled):
+        return "doubled kana"
     ratio = text_size(output) / max(text_size(source), 1)
-    if not MIN_SIZE_RATIO <= ratio <= MAX_SIZE_RATIO:
+    floor = MIN_SIZE_RATIO_WITH_CORRECTION if _CORRECTION_CUE_RE.search(source) else MIN_SIZE_RATIO
+    if not floor <= ratio <= MAX_SIZE_RATIO:
         return f"size ratio {ratio:.2f}"
     return None
 
