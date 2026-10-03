@@ -5,7 +5,7 @@ ASCII ? in Japanese questions and an LLM pass can leave "10 時 30 分" spacing.
 """
 import pytest
 
-from postprocess import _is_japanese, apply_post_processing
+from postprocess import _is_japanese, apply_post_processing, drop_repeated_segments
 
 
 def post(text):
@@ -72,3 +72,39 @@ def test_english_with_one_kanji_is_not_japanese():
 ])
 def test_filler_removal_leaves_no_orphan_commas(raw, expected):
     assert post(raw) == expected
+
+
+def _segs(*texts):
+    return [{'text': t, 't0': float(i), 't1': float(i + 1)} for i, t in enumerate(texts)]
+
+
+def _texts(segments):
+    return [s['text'] for s in segments]
+
+
+def test_repetition_loop_collapses():
+    # The real failure: a long dictation where whisper decoded one sentence ~200 times.
+    loop = [" And then they can do it with the raw fish."] * 200
+    out = _texts(drop_repeated_segments(_segs(
+        " And then they can do it with the raw fish and this is a separate from the raw fish.",
+        *loop,
+        " And then my goal for one year after is...",
+    )))
+    assert out[0].startswith(" And then they can do it with the raw fish and")
+    assert out[-1] == " And then my goal for one year after is..."
+    assert out.count(" And then they can do it with the raw fish.") <= 2
+
+
+def test_distinct_segments_untouched():
+    segs = _segs(" The fee is $30 per semester.", " Parties are $20 for members.", " Otherwise $35.")
+    assert drop_repeated_segments(segs) == segs
+
+
+def test_repeat_that_is_not_back_to_back_survives():
+    # Saying the same thing again later in a dictation is speech, not a loop.
+    segs = _segs(" Sounds good.", " Let's meet Friday.", " Sounds good.")
+    assert drop_repeated_segments(segs) == segs
+
+
+def test_empty():
+    assert drop_repeated_segments([]) == []

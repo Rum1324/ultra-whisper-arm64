@@ -16,6 +16,10 @@ _MULTI_SPACE_RE = re.compile(r"\s{2,}")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.!?])")
 _SENTENCE_BOUNDARY_RE = re.compile(r"([.!?]\s+)([a-z])")
 _STANDALONE_I_RE = re.compile(r"\bi\b")
+# Back-to-back copies of one segment kept before the rest count as a loop.
+_MAX_SEGMENT_REPEATS = 2
+# Everything that isn't a letter or digit, in any script (\w keeps kana/kanji).
+_SEGMENT_KEY_STRIP_RE = re.compile(r"[\W_]+")
 
 
 def _clean_disfluencies(text: str) -> str:
@@ -125,3 +129,29 @@ def apply_post_processing(
         text = _ensure_terminal_punctuation(text)
 
     return text
+
+
+def drop_repeated_segments(segments: list[dict]) -> list[dict]:
+    """
+    Drop the segments of a whisper repetition loop.
+
+    On a long recording whisper can decode one sentence over and over — "And
+    then they can do it with the raw fish." two hundred times — while the
+    speaker is saying something else. Those copies are never speech. Each
+    segment is a dict with at least a 'text' key; order is preserved.
+
+    Only back-to-back copies are dropped, and two are kept, so "No, no." and a
+    point made again later in the dictation both survive. Punctuation, case and
+    spacing are ignored when comparing: whisper varies them between copies.
+    """
+    kept = []
+    run_key, run_len = None, 0
+    for seg in segments:
+        key = _SEGMENT_KEY_STRIP_RE.sub("", seg['text']).casefold()
+        if key and key == run_key:
+            run_len += 1
+        else:
+            run_key, run_len = key, 1
+        if run_len <= _MAX_SEGMENT_REPEATS:
+            kept.append(seg)
+    return kept

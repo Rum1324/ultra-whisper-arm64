@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import List, Dict, Optional
 import numpy as np
 
+from postprocess import drop_repeated_segments
+
 # Load the whisper library
 backend_dir = Path(__file__).parent
 lib_path = backend_dir / "whisper.cpp" / "build" / "src" / "libwhisper.dylib"
@@ -214,6 +216,9 @@ libwhisper.whisper_lang_auto_detect.restype = ctypes.c_int
 libwhisper.whisper_lang_max_id.argtypes = []
 libwhisper.whisper_lang_max_id.restype = ctypes.c_int
 
+libwhisper.whisper_token_count.argtypes = [ctypes.POINTER(WhisperContext), ctypes.c_char_p]
+libwhisper.whisper_token_count.restype = ctypes.c_int
+
 
 # Sampling strategy enum
 WHISPER_SAMPLING_GREEDY = 0
@@ -302,6 +307,17 @@ class WhisperModel:
         params.n_threads = n_threads
         params.translate = False   # transcribe only — never translate to English
 
+        # Never condition a 30 s window on what earlier windows decoded. With
+        # whisper.cpp's default (16384 tokens of rolling history), one bad
+        # window on a long recording seeds the next, and the decoder locks onto
+        # a single sentence for minutes while ignoring the audio. Overridden
+        # below to fit exactly the custom-vocabulary prompt when there is one.
+        params.n_max_text_ctx = 0
+        # A sentence looping inside one window has 32-token entropy of about
+        # log(sentence length) — 2.4 for an 11-token sentence, which slips
+        # under the default threshold. 2.8 makes it fall back to a resample.
+        params.entropy_thold = 2.8
+
         # Keep byte strings alive for the duration of the whisper_full call
         _lang_bytes = None
         _prompt_bytes = None
@@ -329,6 +345,10 @@ class WhisperModel:
             _prompt_bytes = initial_prompt.encode('utf-8')
             params.initial_prompt = _prompt_bytes
             params.carry_initial_prompt = True
+            # Room for the prompt plus the <|prev|> marker and nothing else, so
+            # whisper.cpp's rolling context gets zero tokens (n_take1 == 0).
+            n_prompt = libwhisper.whisper_token_count(self.ctx, _prompt_bytes)
+            params.n_max_text_ctx = n_prompt + 1
             print(f"📖 Custom vocabulary prompt: {initial_prompt}")
 
         if effective_language:
@@ -359,7 +379,6 @@ class WhisperModel:
         n_segments = libwhisper.whisper_full_n_segments(self.ctx)
 
         segments = []
-        full_text = ""
 
         for i in range(n_segments):
             text = libwhisper.whisper_full_get_segment_text(self.ctx, i)
@@ -378,7 +397,11 @@ class WhisperModel:
                 't1': t1_sec
             })
 
-            full_text += text
+        n_decoded = len(segments)
+        segments = drop_repeated_segments(segments)
+        if len(segments) < n_decoded:
+            print(f"🔁 Dropped {n_decoded - len(segments)} repeated segment(s)")
+        full_text = "".join(s['text'] for s in segments)
 
         # Get detected language
         lang_id = libwhisper.whisper_full_lang_id(self.ctx)
