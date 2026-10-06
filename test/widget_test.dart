@@ -128,6 +128,26 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // The overlay window is always on screen. A waveform ticker that kept
+  // running while idle rendered a frame on every display refresh: ~30% CPU
+  // for an app doing nothing.
+  testWidgets('stops rendering frames once idle', (tester) async {
+    final service = FakeAppService(
+      const AppState(recordingState: RecordingState.recording),
+    );
+
+    await tester.pumpWidget(wrap(service));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.binding.hasScheduledFrame, isTrue);
+
+    service.state = const AppState();
+    // pumpAndSettle times out if anything keeps scheduling frames.
+    await tester.pumpAndSettle();
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('rebuilds when the service notifies a state change',
       (tester) async {
     final service = FakeAppService();
