@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/focus_theme.dart';
+
 class HotkeyRecorder extends StatefulWidget {
   final String label;
   final String initialValue;
@@ -185,10 +187,14 @@ class _HotkeyRecorderState extends State<HotkeyRecorder> {
 
   @override
   Widget build(BuildContext context) {
+    final c = FocusColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(
+          widget.label,
+          style: FocusText.body.copyWith(fontSize: 14.4, color: c.ink),
+        ),
         const SizedBox(height: 8),
         
         Focus(
@@ -247,20 +253,20 @@ class _HotkeyRecorderState extends State<HotkeyRecorder> {
                 _startRecording();
               }
             },
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+              constraints: const BoxConstraints(minHeight: 44),
+              // Focus Field: sheet fill, line border, radius-10. While it is
+              // listening for keys it is live, so it takes the accent.
               decoration: BoxDecoration(
+                color: _isRecording ? c.accentTint : c.sheet,
+                borderRadius: const BorderRadius.all(FocusRadius.r10),
                 border: Border.all(
-                  color: _isRecording 
-                      ? Theme.of(context).primaryColor 
-                      : Colors.grey.shade400,
+                  color: _isRecording ? c.accent : c.line,
                   width: _isRecording ? 2 : 1,
                 ),
-                borderRadius: BorderRadius.circular(4),
-                color: _isRecording 
-                    ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
-                    : null,
               ),
               child: Row(
                 children: [
@@ -268,46 +274,38 @@ class _HotkeyRecorderState extends State<HotkeyRecorder> {
                     child: Text(
                       _isRecording
                           ? _getRecordingDisplayText()
-                          : (_currentValue.isEmpty 
-                              ? widget.hintText 
+                          : (_currentValue.isEmpty
+                              ? widget.hintText
                               : _currentValue),
-                      style: TextStyle(
+                      style: FocusText.control.copyWith(
                         color: _isRecording
-                            ? Theme.of(context).primaryColor
-                            : (_currentValue.isEmpty 
-                                ? Colors.grey.shade600 
-                                : null),
-                        fontWeight: _isRecording ? FontWeight.bold : null,
+                            ? c.accent
+                            : (_currentValue.isEmpty ? c.ink3 : c.ink),
+                        fontWeight:
+                            _currentValue.isEmpty && !_isRecording
+                                ? FontWeight.w400
+                                : FontWeight.w500,
                       ),
                     ),
                   ),
-                  
                   if (_isRecording) ...[
-                    const SizedBox(width: 8),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.check, color: Colors.green),
-                          onPressed: _confirmHotkey,
-                          tooltip: 'Confirm (Enter)',
-                          iconSize: 20,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          onPressed: _cancelRecording,
-                          tooltip: 'Cancel (Esc)',
-                          iconSize: 20,
-                        ),
-                      ],
+                    IconButton(
+                      icon: Icon(Icons.check, color: c.ok),
+                      onPressed: _confirmHotkey,
+                      tooltip: 'Confirm (Enter)',
+                      iconSize: 18,
                     ),
-                  ] else ...[
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.keyboard,
-                      color: Colors.grey.shade600,
-                      size: 20,
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: _cancelRecording,
+                      tooltip: 'Cancel (Esc)',
+                      iconSize: 18,
                     ),
-                  ],
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.keyboard, color: c.ink3, size: 18),
+                    ),
                 ],
               ),
             ),
@@ -317,11 +315,8 @@ class _HotkeyRecorderState extends State<HotkeyRecorder> {
         if (_isRecording) ...[
           const SizedBox(height: 8),
           Text(
-            'Press Enter to confirm, Esc to cancel',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
+            'Press Enter to confirm, or Esc to cancel.',
+            style: FocusText.caption.copyWith(color: c.ink2),
           ),
         ],
       ],

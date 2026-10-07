@@ -5,6 +5,8 @@ import '../models/websocket_messages.dart';
 import '../services/app_service.dart';
 import '../services/meeting_detector.dart';
 import '../services/meeting_service.dart';
+import '../theme/focus_theme.dart';
+import 'focus_controls.dart';
 
 /// The meeting surface: the detection prompt, then the live two-track
 /// transcript.
@@ -15,6 +17,9 @@ import '../services/meeting_service.dart';
 /// anger. What this must get right is the two things a user cannot recover
 /// from later: that recording is actually happening, and that the "them" track
 /// is silent when it is.
+///
+/// Drawn as a Focus island: always black, whatever the system appearance,
+/// because it floats over other apps.
 class MeetingPanel extends StatelessWidget {
   const MeetingPanel({super.key});
 
@@ -23,7 +28,7 @@ class MeetingPanel extends StatelessWidget {
     return Consumer<AppService>(
       builder: (context, appService, child) {
         final prompt = appService.pendingMeetingPrompt;
-        return _Glass(
+        return _Island(
           child: prompt != null
               ? _DetectionPrompt(candidate: prompt)
               : _MeetingBody(appService: appService),
@@ -33,21 +38,23 @@ class MeetingPanel extends StatelessWidget {
   }
 }
 
-class _Glass extends StatelessWidget {
-  const _Glass({required this.child});
+class _Island extends StatelessWidget {
+  const _Island({required this.child});
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.fromLTRB(8, 34, 8, 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.black.withValues(alpha: 0.25),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+      decoration: const BoxDecoration(
+        color: FocusIsland.ground,
+        borderRadius: BorderRadius.all(FocusRadius.r26),
       ),
-      child: child,
+      child: DefaultTextStyle(
+        style: FocusText.islandMeta.copyWith(fontSize: 12.5, height: 1.45),
+        child: child,
+      ),
     );
   }
 }
@@ -63,32 +70,31 @@ class _DetectionPrompt extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Looks like a meeting',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
-        ),
+        const Text('MEETING', style: FocusText.islandLabel),
+        const SizedBox(height: 4),
+        const Text('This looks like a meeting.', style: FocusText.islandNow),
         const SizedBox(height: 6),
         Text(
           '${candidate.name} is using the microphone and playing audio at the '
-          'same time. Record and transcribe it?',
-          style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.75)),
+          'same time. Do you want to record and transcribe it?',
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 6,
+          runSpacing: 6,
           children: [
-            FilledButton(
+            FocusIslandPill(
+              label: 'Record',
+              prominent: true,
               onPressed: appService.acceptMeetingPrompt,
-              child: const Text('Record'),
             ),
-            TextButton(
+            FocusIslandPill(
+              label: 'Not now',
               onPressed: () => appService.dismissMeetingPrompt(),
-              child: const Text('Not now'),
             ),
-            TextButton(
+            FocusIslandPill(
+              label: 'Never for ${candidate.name}',
               onPressed: () => appService.dismissMeetingPrompt(never: true),
-              child: Text('Never for ${candidate.name}'),
             ),
           ],
         ),
@@ -111,34 +117,26 @@ class _MeetingBody extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(
-              meeting.isRecording ? Icons.fiber_manual_record : Icons.stop_circle_outlined,
-              size: 14,
-              color: meeting.isRecording ? Colors.redAccent : Colors.white70,
-            ),
-            const SizedBox(width: 6),
+            FocusLevelDot(_level(meeting)),
+            const SizedBox(width: 9),
             Expanded(
               child: Text(
                 meeting.isRecording
-                    ? 'Recording ${target?.name ?? 'microphone only'}'
+                    ? 'Recording ${target?.name ?? 'the microphone only'}'
                     : _phaseLabel(meeting.phase),
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                style: FocusText.islandNow,
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               _stamp(appService.meetingDuration),
-              style: TextStyle(
-                fontSize: 12,
-                fontFeatures: const [FontFeature.tabularFigures()],
-                color: Colors.white.withValues(alpha: 0.7),
-              ),
+              style: FocusText.islandMeta.copyWith(fontSize: 12.5),
             ),
           ],
         ),
         if (appService.meetingSystemAudioSilent) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           const _Notice(
             'The other side is not being captured. Grant UltraWhisper Audio '
             'Recording in System Settings › Privacy & Security, then restart '
@@ -146,22 +144,33 @@ class _MeetingBody extends StatelessWidget {
           ),
         ],
         if (meeting.error != null) ...[
-          const SizedBox(height: 8),
-          _Notice(meeting.error!),
+          const SizedBox(height: 10),
+          _Notice(meeting.error!, level: FocusLevel.risk),
         ],
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Expanded(child: _TranscriptView(meeting: meeting)),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         _Actions(appService: appService),
       ],
     );
   }
 
+  /// The header dot. Recording that is working is calm; recording that has
+  /// lost the other side needs a look; a failure is at risk; a finished
+  /// meeting has nothing live left.
+  FocusLevel _level(MeetingService meeting) {
+    if (meeting.error != null) return FocusLevel.risk;
+    if (!meeting.isRecording) return FocusLevel.offline;
+    if (appService.meetingSystemAudioSilent) return FocusLevel.watch;
+    return FocusLevel.calm;
+  }
+
   static String _phaseLabel(MeetingPhase phase) => switch (phase) {
-        MeetingPhase.ended => 'Meeting ended',
+        MeetingPhase.ended => 'The meeting has ended.',
         MeetingPhase.summarizing => 'Writing notes…',
-        MeetingPhase.summarized => 'Notes ready',
-        MeetingPhase.summaryUnavailable => 'Transcript ready — notes unavailable',
+        MeetingPhase.summarized => 'Your notes are ready.',
+        MeetingPhase.summaryUnavailable =>
+          'The transcript is ready. Notes are unavailable.',
         _ => 'Meeting',
       };
 
@@ -185,7 +194,11 @@ class _TranscriptView extends StatelessWidget {
       return SingleChildScrollView(
         child: SelectableText(
           summary.markdown,
-          style: const TextStyle(fontSize: 12, height: 1.45, color: Colors.white),
+          style: const TextStyle(
+            fontSize: 12.5,
+            height: 1.5,
+            color: FocusIsland.ink,
+          ),
         ),
       );
     }
@@ -198,19 +211,21 @@ class _TranscriptView extends StatelessWidget {
       children: [
         if (unavailable != null) ...[
           _Notice(unavailable.remedy ?? unavailable.detail),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
         ],
         if (meeting.progress != null) ...[
           _Progress(progress: meeting.progress!),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
         ],
         Expanded(
           child: segments.isEmpty
               ? Center(
                   child: Text(
                     'Waiting for speech…',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
+                    style: FocusText.islandMeta.copyWith(
+                      fontSize: 12.5,
+                      color: FocusIsland.ink3,
+                    ),
                   ),
                 )
               : ListView.builder(
@@ -231,23 +246,25 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The speakers differ in lightness, not hue: you in full white, the other
+    // side in island ink-2.
     final isMe = segment.isMe;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(fontSize: 12, height: 1.4, color: Colors.white),
-          children: [
-            TextSpan(
-              text: isMe ? 'Me  ' : 'Them  ',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: isMe ? Colors.lightBlueAccent : Colors.tealAccent,
-              ),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(isMe ? 'ME' : 'THEM', style: FocusText.islandLabel),
+          const SizedBox(height: 1),
+          Text(
+            segment.text,
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.45,
+              color: isMe ? FocusIsland.ink : FocusIsland.ink2,
             ),
-            TextSpan(text: segment.text),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -259,40 +276,63 @@ class _Progress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fraction = progress.total > 0 ? progress.fraction : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '${progress.stage} ${progress.completed}/${progress.total}',
-          style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.7)),
+          '${progress.stage} ${progress.completed} of ${progress.total}',
+          style: FocusText.islandMeta,
         ),
-        const SizedBox(height: 4),
-        LinearProgressIndicator(
-          value: progress.total > 0 ? progress.fraction : null,
-          minHeight: 3,
-          backgroundColor: Colors.white.withValues(alpha: 0.1),
+        const SizedBox(height: 6),
+        // Focus island track: 4px, island-fill, the bar in island ink at 85%.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: fraction,
+            minHeight: 4,
+            backgroundColor: FocusIsland.fill,
+            color: FocusIsland.ink.withValues(alpha: .85),
+          ),
         ),
       ],
     );
   }
 }
 
+/// A status sentence with its level dot (Focus `StatusRow`, on the island).
 class _Notice extends StatelessWidget {
-  const _Notice(this.message);
+  const _Notice(this.message, {this.level = FocusLevel.watch});
   final String message;
+  final FocusLevel level;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        color: Colors.amber.withValues(alpha: 0.12),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: const BoxDecoration(
+        color: FocusIsland.fill,
+        borderRadius: BorderRadius.all(FocusRadius.r14),
       ),
-      child: Text(
-        message,
-        style: const TextStyle(fontSize: 11, height: 1.4, color: Colors.amberAccent),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: FocusLevelDot(level, size: 8),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                height: 1.45,
+                color: FocusIsland.ink,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -309,17 +349,15 @@ class _Actions extends StatelessWidget {
     if (meeting.isRecording) {
       return Row(
         children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: () => appService.endMeeting(),
-              icon: const Icon(Icons.stop, size: 16),
-              label: const Text('Stop & write notes'),
-            ),
+          FocusIslandPill(
+            label: 'Stop and write notes',
+            prominent: true,
+            onPressed: () => appService.endMeeting(),
           ),
-          const SizedBox(width: 8),
-          TextButton(
+          const SizedBox(width: 6),
+          FocusIslandPill(
+            label: 'Discard',
             onPressed: appService.cancelMeeting,
-            child: const Text('Discard'),
           ),
         ],
       );
@@ -335,31 +373,25 @@ class _Actions extends StatelessWidget {
         if (saved.isNotEmpty) ...[
           Text(
             'Saved to ${appService.meetingSaveDirectory}',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.55),
-            ),
+            style: FocusText.islandMeta,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
         ],
         Row(
           children: [
-            if (meeting.canSummarize)
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => appService.summarizeMeeting(),
-                  child: Text(
-                    meeting.summary == null ? 'Write notes' : 'Rewrite notes',
-                  ),
-                ),
-              )
-            else
-              const Expanded(child: SizedBox.shrink()),
-            const SizedBox(width: 8),
-            TextButton(
+            if (meeting.canSummarize) ...[
+              FocusIslandPill(
+                label: meeting.summary == null ? 'Write notes' : 'Rewrite notes',
+                prominent: true,
+                onPressed: () => appService.summarizeMeeting(),
+              ),
+              const SizedBox(width: 6),
+            ],
+            FocusIslandPill(
+              label: 'Done',
+              prominent: !meeting.canSummarize,
               onPressed: appService.cancelMeeting,
-              child: const Text('Done'),
             ),
           ],
         ),

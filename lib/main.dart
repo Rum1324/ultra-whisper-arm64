@@ -16,6 +16,7 @@ import 'services/audio_cue_service.dart';
 import 'services/settings_window_service.dart';
 import 'services/volume_control_service.dart';
 import 'services/status_bar_service.dart';
+import 'theme/focus_theme.dart';
 import 'widgets/app_content.dart';
 import 'windows/settings_window_entry.dart';
 
@@ -243,7 +244,8 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
           backgroundColor: Colors.transparent,
           body: Center(
             child: CircularProgressIndicator(
-              color: Colors.blue.withValues(alpha: 0.7),
+              strokeWidth: 2,
+              color: FocusIsland.ink2,
             ),
           ),
         ),
@@ -255,14 +257,9 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
       value: _appService,
       child: MaterialApp(
         title: 'UltraWhisper',
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
-            brightness: Brightness.dark,
-          ), 
-          useMaterial3: true,
-        ),
+        // The overlay and the meeting panel draw themselves as the black
+        // Focus island; the dark theme only reaches their popup menu.
+        theme: focusTheme(Brightness.dark),
         home: const UltraWhisperHome(),
         debugShowCheckedModeBanner: false,
       ),

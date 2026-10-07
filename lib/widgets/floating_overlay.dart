@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/app_service.dart';
+import '../theme/focus_theme.dart';
+import 'focus_controls.dart';
 
 class FloatingOverlay extends StatefulWidget {
   const FloatingOverlay({super.key});
@@ -44,54 +46,67 @@ class _FloatingOverlayState extends State<FloatingOverlay>
           return const SizedBox.shrink();
         }
 
+        // A Focus island: black in both appearances, because it floats over
+        // whatever app is in front.
         return Container(
           width: double.infinity,
           height: double.infinity,
           margin: const EdgeInsets.fromLTRB(8, 34, 8, 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 1.5,
-            ),
-            boxShadow: [
-              // Outer shadow for depth
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 12,
-                spreadRadius: 2,
-                offset: const Offset(0, 4),
-              ),
-              // Inner highlight for glass effect
-              BoxShadow(
-                color: Colors.white.withValues(alpha: 0.1),
-                blurRadius: 6,
-                spreadRadius: -1,
-                offset: const Offset(0, -2),
-              ),
-            ],
-            // Subtle background to enhance visibility
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.02),
-              ],
-            ),
+          padding: const EdgeInsets.only(left: 14),
+          decoration: const BoxDecoration(
+            color: FocusIsland.ground,
+            borderRadius: BorderRadius.all(FocusRadius.r26),
           ),
           child: Row(
             children: [
-              // Left: Live audio waveform
+              // Left: what is happening, as a dot and a word
+              _buildStatus(state),
+
+              // Middle: live audio waveform
               _buildAudioWaveform(state),
 
-              // Right: Record button
+              // Right: record button and menu
               _buildRecordButton(context, appService),
             ],
           ),
         );
       },
     );
+  }
+
+  Widget _buildStatus(AppState state) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FocusLevelDot(_levelFor(state.recordingState), size: 8),
+        const SizedBox(width: 7),
+        SizedBox(
+          width: 58,
+          child: Text(
+            _wordFor(state.recordingState),
+            style: FocusText.islandMeta.copyWith(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: FocusIsland.ink,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The dot is a glance aid; this word is the message.
+  String _wordFor(RecordingState state) => switch (state) {
+        RecordingState.idle => 'Ready',
+        RecordingState.recording => 'Listening',
+        RecordingState.processing => 'Writing',
+        RecordingState.error => 'Error',
+      };
+
+  /// Which Focus level dot each recording state shows.
+  FocusLevel _levelFor(RecordingState state) {
+    // TODO(human): map each RecordingState to a FocusLevel.
+    return FocusLevel.offline;
   }
 
   Widget _buildAudioWaveform(AppState state) {
@@ -246,175 +261,100 @@ class _FloatingOverlayState extends State<FloatingOverlay>
   }
 
   Widget _buildWaveformBar(AppState state, int index) {
-    double baseHeight = 3.0;
-    double maxHeight = 80.0;
+    const baseHeight = 3.0;
+    const maxHeight = 30.0;
 
-    double heightMultiplier = _waveformHeights[index].clamp(0.0, 1.0);
-    double barHeight = (baseHeight + (maxHeight * heightMultiplier)).clamp(baseHeight, baseHeight + maxHeight);
+    final heightMultiplier = _waveformHeights[index].clamp(0.0, 1.0);
+    final barHeight = baseHeight + maxHeight * heightMultiplier;
 
-    // Add peak indicator
-    double peakHeight = (_peakHeights[index] * maxHeight * 0.1).clamp(0.0, maxHeight * 0.2);
-
-    Color barColor = _getWaveformColor(state.recordingState);
-    Color peakColor = _getPeakColor(state.recordingState);
-
-    // Ensure total height is always positive
-    double totalHeight = (barHeight + peakHeight).clamp(baseHeight, baseHeight + maxHeight + (maxHeight * 0.2));
-
-    return Container(
-      width: 4,
-      height: totalHeight,
+    // Plain island ink at three strengths: Focus keeps colour for state, and
+    // the dot beside the waveform already carries it.
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 30),
+      width: 3,
+      height: barHeight,
       margin: const EdgeInsets.symmetric(horizontal: 1),
-      child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: [
-          // Main bar
-          Positioned(
-            bottom: 0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 30),
-              width: 4,
-              height: barHeight.clamp(1.0, double.infinity),
-              decoration: BoxDecoration(
-                color: barColor,
-                borderRadius: BorderRadius.circular(2),
-                boxShadow: [
-                  BoxShadow(
-                    color: barColor.withValues(alpha: 0.3),
-                    blurRadius: 4,
-                    spreadRadius: 0,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Peak indicator
-          if (state.recordingState == RecordingState.recording &&
-              peakHeight > 2)
-            Positioned(
-              top: 0,
-              child: Container(
-                width: 2,
-                height: peakHeight.clamp(1.0, double.infinity),
-                decoration: BoxDecoration(
-                  color: peakColor,
-                  borderRadius: BorderRadius.circular(1),
-                ),
-              ),
-            ),
-        ],
+      decoration: BoxDecoration(
+        color: _getWaveformColor(state.recordingState),
+        borderRadius: BorderRadius.circular(1.5),
       ),
     );
   }
 
   Color _getWaveformColor(RecordingState state) {
     switch (state) {
-      case RecordingState.idle:
-        return Colors.white.withValues(alpha: 0.3);
       case RecordingState.recording:
-        return Colors.green.withValues(alpha: 0.9);
+        return FocusIsland.ink;
       case RecordingState.processing:
-        return Colors.orange.withValues(alpha: 0.9);
-      case RecordingState.error:
-        return Colors.red.withValues(alpha: 0.9);
-    }
-  }
-
-  Color _getPeakColor(RecordingState state) {
-    switch (state) {
+        return FocusIsland.ink2;
       case RecordingState.idle:
-        return Colors.white.withValues(alpha: 0.2);
-      case RecordingState.recording:
-        return Colors.yellow.withValues(alpha: 0.8);
-      case RecordingState.processing:
-        return Colors.orange.withValues(alpha: 0.6);
       case RecordingState.error:
-        return Colors.red.withValues(alpha: 0.6);
+        return FocusIsland.ink3;
     }
   }
 
   Widget _buildRecordButton(BuildContext context, AppService appService) {
     final state = appService.state;
     final isRecording = state.recordingState == RecordingState.recording;
-    
-    return Container(
-      padding: const EdgeInsets.all(8),
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Record/Stop button
-          GestureDetector(
-            onTap: () {
-              if (state.recordingState == RecordingState.idle) {
-                appService.startRecording();
-              } else if (state.recordingState == RecordingState.recording) {
-                appService.stopRecording();
-              }
-            },
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: isRecording 
-                    ? Colors.red.withValues(alpha: 0.2)
-                    : Colors.white.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: isRecording 
-                      ? Colors.red.withValues(alpha: 0.6)
-                      : Colors.white.withValues(alpha: 0.3),
-                  width: 1.5,
+          // Record/Stop. While recording, Stop is the one thing the island
+          // offers, so it inverts to the prominent white pill.
+          Semantics(
+            button: true,
+            label: isRecording ? 'Stop recording' : 'Start recording',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () {
+                  if (state.recordingState == RecordingState.idle) {
+                    appService.startRecording();
+                  } else if (state.recordingState == RecordingState.recording) {
+                    appService.stopRecording();
+                  }
+                },
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: isRecording ? FocusIsland.ink : FocusIsland.fill,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isRecording ? Icons.stop : Icons.mic,
+                    color: isRecording ? FocusIsland.ground : FocusIsland.ink,
+                    size: 18,
+                  ),
                 ),
-              ),
-              child: Icon(
-                isRecording ? Icons.stop : Icons.mic,
-                color: isRecording 
-                    ? Colors.red.withValues(alpha: 0.9)
-                    : Colors.white.withValues(alpha: 0.7),
-                size: 18,
               ),
             ),
           ),
-          const SizedBox(width: 8),
           // Settings menu
           PopupMenuButton<String>(
-            icon: Icon(
-              Icons.more_vert,
-              color: Colors.white.withValues(alpha: 0.7),
-              size: 16,
+            icon: const Icon(
+              Icons.more_horiz,
+              color: FocusIsland.ink2,
+              size: 18,
             ),
-            color: Colors.black.withValues(alpha: 0.8),
+            tooltip: 'More',
             onSelected: (value) => _handleMenuAction(context, value, appService),
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'settings',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.settings,
-                      color: Colors.white.withValues(alpha: 0.7),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Settings', style: TextStyle(color: Colors.white)),
-                  ],
+            itemBuilder: (context) {
+              final c = FocusColors.of(context);
+              return [
+                const PopupMenuItem(
+                  value: 'settings',
+                  child: Text('Settings'),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'quit',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.exit_to_app,
-                      color: Colors.red.withValues(alpha: 0.7),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('Quit', style: TextStyle(color: Colors.red)),
-                  ],
+                PopupMenuItem(
+                  value: 'quit',
+                  child: Text('Quit', style: TextStyle(color: c.bad)),
                 ),
-              ),
-            ],
+              ];
+            },
           ),
         ],
       ),

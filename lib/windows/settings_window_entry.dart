@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import '../models/notes_model_presets.dart';
 import '../models/settings.dart';
+import '../theme/focus_theme.dart';
+import '../widgets/focus_controls.dart';
 import '../widgets/hotkey_recorder.dart';
 
 /// Entry point for the settings window
@@ -95,37 +97,21 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(0xFF1A1A1A),
-          body: Center(
-            child: CircularProgressIndicator(
-              color: Colors.blue.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-      );
-    }
-
+    // The settings window follows the system appearance; the overlay and the
+    // meeting panel are the always-black island instead.
     return MaterialApp(
       title: 'Settings - UltraWhisper',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: focusTheme(Brightness.light),
+      darkTheme: focusTheme(Brightness.dark),
+      themeMode: ThemeMode.system,
       home: Scaffold(
-        backgroundColor: const Color(0xFF1A1A1A),
-        body: SettingsWindowContent(
-          settings: _settings!,
-          onSave: _handleSettingsSave,
-        ),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+            : SettingsWindowContent(
+                settings: _settings!,
+                onSave: _handleSettingsSave,
+              ),
       ),
     );
   }
@@ -177,31 +163,24 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
 
   @override
   Widget build(BuildContext context) {
+    final c = FocusColors.of(context);
     return Column(
       children: [
-        // Header with padding for traffic light buttons
-        Container(
-          padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+        // Header, padded down past the traffic-light buttons.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 36, 12, 12),
           child: Row(
             children: [
-              const Text(
-                'Settings',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
+              Text('Settings', style: FocusText.sheetTitle.copyWith(color: c.ink)),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close, color: Colors.white70),
+                icon: const Icon(Icons.close, size: 18),
+                tooltip: 'Close',
                 onPressed: _handleCancel,
               ),
             ],
           ),
         ),
-
-        const Divider(color: Colors.white12, height: 1),
 
         // Settings content
         Expanded(
@@ -211,26 +190,21 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
           ),
         ),
 
-        const Divider(color: Colors.white12, height: 1),
+        Divider(color: c.line),
 
         // Footer buttons
-        Container(
-          padding: const EdgeInsets.all(20),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
                 onPressed: _handleCancel,
-                child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+                child: const Text('Cancel'),
               ),
-              const SizedBox(width: 12),
-              ElevatedButton(
+              const SizedBox(width: 8),
+              FilledButton(
                 onPressed: _handleSave,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
                 child: const Text('Save'),
               ),
             ],
@@ -283,436 +257,330 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     widget.onSettingsChanged(newSettings);
   }
 
+  static const _sectionGap = SizedBox(height: 28);
+  static const _groupGap = SizedBox(height: 16);
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // AUDIO SECTION
-          _buildSectionHeader('Audio'),
-          const SizedBox(height: 16),
-          _buildLabel('Volume Control During Recording'),
-          const SizedBox(height: 8),
-          CheckboxListTile(
-            title: const Text(
-              'Reduce system volume during recording',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Automatically lower system volume to minimize background audio interference',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.duckVolumeDuringRecording,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(
-                duckVolumeDuringRecording: value ?? true,
-              ));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: Center(
+        child: ConstrainedBox(
+          // Focus `measure`: one column, never wider than 640px.
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ..._audioSection(),
+              _sectionGap,
+              ..._modelSection(),
+              _sectionGap,
+              ..._shortcutsSection(),
+              _sectionGap,
+              ..._appearanceSection(),
+              _sectionGap,
+              ..._meetingsSection(),
+              _sectionGap,
+              ..._advancedSection(),
+            ],
           ),
+        ),
+      ),
+    );
+  }
 
+  List<Widget> _audioSection() {
+    return [
+      const FocusLabel('Audio'),
+      FocusGroup(
+        children: [
+          FocusSettingRow(
+            title: 'Reduce system volume while recording',
+            subtitle: 'Lowers other audio so it does not bleed into the '
+                'microphone. The volume comes back when recording stops.',
+            value: _settings.duckVolumeDuringRecording,
+            onChanged: (value) => _updateSettings(
+              _settings.copyWith(duckVolumeDuringRecording: value),
+            ),
+          ),
           if (_settings.duckVolumeDuringRecording) ...[
-            Padding(
-              padding: const EdgeInsets.only(left: 24.0),
-              child: CheckboxListTile(
-                title: const Text(
-                  'Skip new Bluetooth devices by default',
-                  style: TextStyle(color: Colors.white),
-                ),
-                subtitle: const Text(
-                  "System audio can't bleed into the mic through headphones. "
-                  'This only sets the starting value for a device the first '
-                  'time it is used — the table below decides after that.',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                value: _settings.skipDuckWhenBluetooth,
-                onChanged: (value) {
-                  _updateSettings(_settings.copyWith(
-                    skipDuckWhenBluetooth: value ?? true,
-                  ));
-                },
-                contentPadding: EdgeInsets.zero,
-                controlAffinity: ListTileControlAffinity.leading,
+            FocusSettingRow(
+              title: 'Skip new Bluetooth devices by default',
+              subtitle: "System audio can't bleed into the mic through "
+                  'headphones. This only sets the starting value for a device '
+                  'the first time it is used — the table below decides after '
+                  'that.',
+              value: _settings.skipDuckWhenBluetooth,
+              onChanged: (value) => _updateSettings(
+                _settings.copyWith(skipDuckWhenBluetooth: value),
               ),
             ),
-
-            const SizedBox(height: 16),
-            _buildLabel('Output devices'),
-            const SizedBox(height: 4),
-            const Text(
-              'Devices are remembered as you use them. Tick a device to leave '
-              'its volume alone while recording — right for headphones, wrong '
-              'for a speaker the mic can hear.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            _buildDeviceTable(),
-
-            const SizedBox(height: 16),
-            _buildLabel('Volume level during recording'),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Slider(
-                    value: _settings.volumeDuckPercentage,
-                    min: 0.0,
-                    max: 0.3,
-                    divisions: 30,
-                    label: '${(_settings.volumeDuckPercentage * 100).round()}%',
-                    onChanged: (value) {
-                      _updateSettings(_settings.copyWith(volumeDuckPercentage: value));
-                    },
-                  ),
-                ),
-                SizedBox(
-                  width: 60,
-                  child: Text(
-                    '${(_settings.volumeDuckPercentage * 100).round()}%',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.only(left: 12.0),
-              child: Text(
-                'Original volume will be automatically restored after recording',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+            _buildSliderRow(
+              title: 'Volume while recording',
+              value: _settings.volumeDuckPercentage,
+              max: 0.3,
+              divisions: 30,
+              onChanged: (value) => _updateSettings(
+                _settings.copyWith(volumeDuckPercentage: value),
               ),
             ),
           ],
+        ],
+      ),
+      if (_settings.duckVolumeDuringRecording) ...[
+        _groupGap,
+        const FocusLabel('Output devices'),
+        const FocusCaption(
+          'Devices are remembered as you use them. Turn a device on to leave '
+          'its volume alone while recording — right for headphones, wrong '
+          'for a speaker the mic can hear.',
+        ),
+        _buildDeviceTable(),
+      ],
+    ];
+  }
 
-          const SizedBox(height: 32),
+  List<Widget> _modelSection() {
+    final c = FocusColors.of(context);
+    return [
+      const FocusLabel('Transcription model'),
+      FocusGroup(
+        children: [
+          FocusRow(
+            title: 'Model storage',
+            subtitle: _settings.modelStoragePath,
+            trailing: Icon(Icons.folder_open, size: 18, color: c.ink3),
+          ),
+        ],
+      ),
+    ];
+  }
 
-          // MODEL SECTION
-          _buildSectionHeader('Transcription Model'),
-          const SizedBox(height: 16),
-          _buildLabel('Model Storage Path (Read-only)'),
-          const SizedBox(height: 8),
-          TextFormField(
-            initialValue: _settings.modelStoragePath,
-            readOnly: true,
-            style: const TextStyle(color: Colors.white70),
-            decoration: _inputDecoration().copyWith(
-              suffixIcon: const Icon(Icons.folder_open, color: Colors.white30),
+  List<Widget> _shortcutsSection() {
+    return [
+      const FocusLabel('Keyboard shortcuts'),
+      const FocusCaption(
+        'Language is always auto-detected — no need to pick English or '
+        'Japanese.',
+      ),
+      FocusGroup(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: HotkeyRecorder(
+              label: 'Toggle record',
+              initialValue: _settings.toggleRecordHotkey,
+              onChanged: (value) {
+                _updateSettings(_settings.copyWith(toggleRecordHotkey: value));
+              },
             ),
           ),
-
-          const SizedBox(height: 32),
-
-          // SHORTCUTS SECTION
-          _buildSectionHeader('Keyboard Shortcuts'),
-          const SizedBox(height: 4),
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8.0),
-            child: Text(
-              'Language is always auto-detected — no need to pick English or Japanese.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: HotkeyRecorder(
+              label: 'Toggle record, then press Enter',
+              initialValue: _settings.toggleRecordEnterHotkey,
+              onChanged: (value) {
+                _updateSettings(
+                    _settings.copyWith(toggleRecordEnterHotkey: value));
+              },
             ),
           ),
-          HotkeyRecorder(
-            label: 'Toggle Record',
-            initialValue: _settings.toggleRecordHotkey,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(toggleRecordHotkey: value));
-            },
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _appearanceSection() {
+    final c = FocusColors.of(context);
+    return [
+      const FocusLabel('Window'),
+      FocusGroup(
+        children: [
+          FocusSettingRow(
+            title: 'Always on top',
+            subtitle: 'Keep the overlay above other apps.',
+            value: _settings.alwaysOnTop,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(alwaysOnTop: value)),
           ),
-
-          const SizedBox(height: 16),
-
-          HotkeyRecorder(
-            label: 'Toggle Record + Enter',
-            initialValue: _settings.toggleRecordEnterHotkey,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(toggleRecordEnterHotkey: value));
-            },
+          FocusSettingRow(
+            title: 'Bring to front while recording',
+            subtitle: 'Raise the overlay when recording starts.',
+            value: _settings.bringToFrontDuringRecording,
+            onChanged: (value) => _updateSettings(
+              _settings.copyWith(bringToFrontDuringRecording: value),
+            ),
           ),
+          FocusRow(
+            title: 'App icon',
+            subtitle: 'Where the app icon appears.',
+            trailing: DropdownButtonHideUnderline(
+              child: DropdownButton<DockVisibilityMode>(
+                value: _settings.dockVisibilityMode,
+                onChanged: (value) {
+                  if (value != null) {
+                    _updateSettings(
+                        _settings.copyWith(dockVisibilityMode: value));
+                  }
+                },
+                dropdownColor: c.surface,
+                borderRadius: const BorderRadius.all(FocusRadius.r12),
+                style: FocusText.control.copyWith(color: c.ink),
+                iconEnabledColor: c.ink2,
+                items: const [
+                  DropdownMenuItem(
+                    value: DockVisibilityMode.menuBarOnly,
+                    child: Text('Menu bar only'),
+                  ),
+                  DropdownMenuItem(
+                    value: DockVisibilityMode.dockOnly,
+                    child: Text('Dock only'),
+                  ),
+                  DropdownMenuItem(
+                    value: DockVisibilityMode.both,
+                    child: Text('Menu bar and Dock'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
 
-          const SizedBox(height: 32),
+  List<Widget> _meetingsSection() {
+    return [
+      const FocusLabel('Meetings'),
+      FocusGroup(
+        children: [
+          FocusSettingRow(
+            title: 'Detect meetings automatically',
+            subtitle: 'Offer to record when one app is using the microphone '
+                'and playing audio at the same time.',
+            value: _settings.meetingAutoDetect,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(meetingAutoDetect: value)),
+          ),
+          FocusSettingRow(
+            title: 'Save transcripts and notes',
+            subtitle: 'The transcript is written when recording stops, before '
+                'notes are generated.',
+            value: _settings.saveMeetingTranscripts,
+            onChanged: (value) => _updateSettings(
+              _settings.copyWith(saveMeetingTranscripts: value),
+            ),
+          ),
+          _buildSaveLocationField(),
+        ],
+      ),
+      _groupGap,
+      const FocusLabel('Notes model (Ollama)'),
+      const FocusCaption(
+        'Notes need Ollama running locally with this model pulled. '
+        'Transcription is unaffected if it is missing.',
+      ),
+      _buildSummaryModelField(),
+    ];
+  }
 
-          // APPEARANCE SECTION
-          _buildSectionHeader('Appearance'),
-          const SizedBox(height: 16),
+  List<Widget> _advancedSection() {
+    return [
+      const FocusLabel('Post-processing'),
+      FocusGroup(
+        children: [
+          FocusSettingRow(
+            title: 'Smart capitalization',
+            value: _settings.smartCapitalization,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(smartCapitalization: value)),
+          ),
+          FocusSettingRow(
+            title: 'Punctuation',
+            value: _settings.punctuation,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(punctuation: value)),
+          ),
+          FocusSettingRow(
+            title: 'Disfluency cleanup',
+            subtitle: 'Remove filler words like "um" and "uh".',
+            value: _settings.disfluencyCleanup,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(disfluencyCleanup: value)),
+          ),
+          FocusSettingRow(
+            title: 'AI formatting (local)',
+            subtitle: 'Polishes each dictation with gemma4:e4b via Ollama — '
+                'fillers, natural punctuation, numbers, Japanese 、。. Adds '
+                'about a second. Needs Ollama with `ollama pull gemma4:e4b`; '
+                'without it the options above are used as before.',
+            value: _settings.aiFormatting,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(aiFormatting: value)),
+          ),
+        ],
+      ),
+      _groupGap,
+      const FocusLabel('Pasting'),
+      FocusGroup(
+        children: [
+          FocusSettingRow(
+            title: 'Keep transcript on clipboard',
+            subtitle: 'Leave the transcript on the clipboard after pasting, '
+                'so you can paste it again. Turn off to put your previous '
+                'clipboard back.',
+            value: _settings.keepTranscriptOnClipboard,
+            onChanged: (value) => _updateSettings(
+              _settings.copyWith(keepTranscriptOnClipboard: value),
+            ),
+          ),
+        ],
+      ),
+      _groupGap,
+      const FocusLabel('Custom dictionary'),
+      const FocusCaption(
+        'Add domain-specific terms for better recognition, like "MacBook" or '
+        '"Kubernetes".',
+      ),
+      _buildCustomTermsField(),
+    ];
+  }
 
-          _buildLabel('Glass Opacity'),
-          const SizedBox(height: 8),
+  /// A slider row with its value in tabular figures at the end.
+  Widget _buildSliderRow({
+    required String title,
+    required double value,
+    required double max,
+    required int divisions,
+    required ValueChanged<double> onChanged,
+  }) {
+    final c = FocusColors.of(context);
+    final percent = '${(value * 100).round()}%';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Row(
             children: [
               Expanded(
-                child: Slider(
-                  value: _settings.glassOpacity,
-                  min: 0.0,
-                  max: 1.0,
-                  divisions: 100,
-                  label: '${(_settings.glassOpacity * 100).round()}%',
-                  onChanged: (value) {
-                    _updateSettings(_settings.copyWith(glassOpacity: value));
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 60,
                 child: Text(
-                  '${(_settings.glassOpacity * 100).round()}%',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
+                  title,
+                  style: FocusText.body.copyWith(fontSize: 14.4, color: c.ink),
                 ),
               ),
+              Text(percent, style: FocusText.detail.copyWith(color: c.ink2)),
             ],
           ),
-
-          const SizedBox(height: 24),
-
-          _buildLabel('Window Behavior'),
-          const SizedBox(height: 8),
-          CheckboxListTile(
-            title: const Text(
-              'Always on Top',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Keep window above other applications',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.alwaysOnTop,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(alwaysOnTop: value ?? false));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
+          Slider(
+            value: value,
+            min: 0.0,
+            max: max,
+            divisions: divisions,
+            label: percent,
+            onChanged: onChanged,
           ),
-
-          CheckboxListTile(
-            title: const Text(
-              'Bring to Front During Recording',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Bring window to front when recording starts',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.bringToFrontDuringRecording,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(
-                bringToFrontDuringRecording: value ?? false,
-              ));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          const SizedBox(height: 16),
-
-          _buildLabel('App Visibility'),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<DockVisibilityMode>(
-            value: _settings.dockVisibilityMode,
-            onChanged: (value) {
-              if (value != null) {
-                _updateSettings(_settings.copyWith(dockVisibilityMode: value));
-              }
-            },
-            dropdownColor: const Color(0xFF2D2D2D),
-            style: const TextStyle(color: Colors.white),
-            decoration: _inputDecoration(),
-            items: const [
-              DropdownMenuItem(
-                value: DockVisibilityMode.menuBarOnly,
-                child: Text('Menu Bar Only'),
-              ),
-              DropdownMenuItem(
-                value: DockVisibilityMode.dockOnly,
-                child: Text('Dock Only'),
-              ),
-              DropdownMenuItem(
-                value: DockVisibilityMode.both,
-                child: Text('Both Menu Bar and Dock'),
-              ),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.only(top: 8.0, left: 12.0),
-            child: Text(
-              'Choose where the app icon appears',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-          ),
-
-          const SizedBox(height: 32),
-
-          // ADVANCED SECTION
-          _buildSectionHeader('Meetings'),
-          const SizedBox(height: 16),
-
-          CheckboxListTile(
-            title: const Text(
-              'Detect meetings automatically',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Offer to record when one app is using the microphone and '
-              'playing audio at the same time.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.meetingAutoDetect,
-            onChanged: (value) {
-              _updateSettings(
-                  _settings.copyWith(meetingAutoDetect: value ?? true));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          CheckboxListTile(
-            title: const Text(
-              'Save transcripts and notes',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'The transcript is written when recording stops, before notes '
-              'are generated.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.saveMeetingTranscripts,
-            onChanged: (value) {
-              _updateSettings(
-                  _settings.copyWith(saveMeetingTranscripts: value ?? true));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          const SizedBox(height: 16),
-          _buildLabel('Save location'),
-          const SizedBox(height: 8),
-          _buildSaveLocationField(),
-
-          const SizedBox(height: 24),
-          _buildLabel('Notes model (Ollama)'),
-          const SizedBox(height: 4),
-          const Padding(
-            padding: EdgeInsets.only(left: 12.0, bottom: 8.0),
-            child: Text(
-              'Notes need Ollama running locally with this model pulled. '
-              'Transcription is unaffected if it is missing.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-          ),
-          _buildSummaryModelField(),
-
-          const SizedBox(height: 32),
-          _buildSectionHeader('Advanced'),
-          const SizedBox(height: 16),
-          _buildLabel('Post-processing Options'),
-          const SizedBox(height: 8),
-          CheckboxListTile(
-            title: const Text(
-              'Smart Capitalization',
-              style: TextStyle(color: Colors.white),
-            ),
-            value: _settings.smartCapitalization,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(
-                smartCapitalization: value ?? true,
-              ));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          CheckboxListTile(
-            title: const Text(
-              'Punctuation',
-              style: TextStyle(color: Colors.white),
-            ),
-            value: _settings.punctuation,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(punctuation: value ?? true));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          CheckboxListTile(
-            title: const Text(
-              'Disfluency Cleanup',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Remove filler words like "um", "uh", etc.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.disfluencyCleanup,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(
-                disfluencyCleanup: value ?? true,
-              ));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          CheckboxListTile(
-            title: const Text(
-              'AI Formatting (local)',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Polishes each dictation with gemma4:e4b via Ollama — fillers, '
-              'natural punctuation, numbers, Japanese 、。. Adds about a second. '
-              'Needs Ollama with `ollama pull gemma4:e4b`; without it the '
-              'options above are used as before.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.aiFormatting,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(aiFormatting: value ?? true));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          const SizedBox(height: 24),
-
-          _buildLabel('Pasting'),
-          const SizedBox(height: 8),
-          CheckboxListTile(
-            title: const Text(
-              'Keep Transcript on Clipboard',
-              style: TextStyle(color: Colors.white),
-            ),
-            subtitle: const Text(
-              'Leave the transcript on the clipboard after pasting, so you can '
-              'paste it again. Turn off to put your previous clipboard back.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            value: _settings.keepTranscriptOnClipboard,
-            onChanged: (value) {
-              _updateSettings(_settings.copyWith(
-                keepTranscriptOnClipboard: value ?? true,
-              ));
-            },
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-
-          const SizedBox(height: 24),
-
-          _buildLabel('Custom Dictionary'),
-          const SizedBox(height: 4),
-          const Padding(
-            padding: EdgeInsets.only(left: 12.0, bottom: 8.0),
-            child: Text(
-              'Add domain-specific terms for better recognition (e.g., "MacBook", "Kubernetes")',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-          ),
-          _buildCustomTermsField(),
         ],
       ),
     );
@@ -722,35 +590,24 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     final configured = _settings.meetingSaveDirectory.trim();
     final shown = configured.isEmpty ? _defaultSaveDirectory : configured;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+    return FocusRow(
+      title: 'Save location',
+      subtitle: shown,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (configured.isNotEmpty)
+            TextButton(
+              onPressed: () =>
+                  _updateSettings(_settings.copyWith(meetingSaveDirectory: '')),
+              child: const Text('Default'),
             ),
-            child: Text(
-              shown,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-            ),
+          OutlinedButton(
+            onPressed: _pickSaveLocation,
+            child: const Text('Choose…'),
           ),
-        ),
-        const SizedBox(width: 8),
-        TextButton(
-          onPressed: _pickSaveLocation,
-          child: const Text('Choose…'),
-        ),
-        if (configured.isNotEmpty)
-          TextButton(
-            onPressed: () =>
-                _updateSettings(_settings.copyWith(meetingSaveDirectory: '')),
-            child: const Text('Default'),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -780,10 +637,10 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   }
 
   Widget _buildSummaryModelField() {
+    final c = FocusColors.of(context);
     final active = presetForTag(_settings.meetingSummaryModel);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return FocusGroup(
       children: [
         // Size is shown because it is the thing the user actually feels — the
         // difference between a note and an unusable laptop for two minutes.
@@ -796,54 +653,69 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 _updateSettings(_settings.copyWith(meetingSummaryModel: value));
               }
             },
-            title: Text(
-              '${preset.label}  ·  ~${preset.approxGigabytes.toStringAsFixed(1)} GB',
-              style: const TextStyle(color: Colors.white, fontSize: 13),
+            title: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: preset.label),
+                  TextSpan(
+                    text: '  ~${preset.approxGigabytes.toStringAsFixed(1)} GB',
+                    style: FocusText.detail.copyWith(color: c.ink2),
+                  ),
+                ],
+              ),
+              style: FocusText.body.copyWith(fontSize: 14.4, color: c.ink),
             ),
             subtitle: Text(
               preset.note,
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
+              style: FocusText.caption.copyWith(fontSize: 12.8, color: c.ink2),
             ),
-            contentPadding: EdgeInsets.zero,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             controlAffinity: ListTileControlAffinity.leading,
             dense: true,
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          active == null
-              ? 'Custom tag'
-              : 'Pull it once with:  ${active.pullCommand}',
-          style: const TextStyle(color: Colors.white38, fontSize: 11),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (active == null)
+                Text(
+                  'Custom tag',
+                  style: FocusText.caption.copyWith(color: c.ink2),
+                )
+              else
+                SelectableText.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(text: 'Pull it once with '),
+                      TextSpan(
+                        text: active.pullCommand,
+                        style: FocusText.mono.copyWith(color: c.ink),
+                      ),
+                    ],
+                  ),
+                  style: FocusText.caption.copyWith(color: c.ink2),
+                ),
+              const SizedBox(height: 8),
+              _buildSummaryModelTagField(),
+            ],
+          ),
         ),
-        const SizedBox(height: 6),
-        _buildSummaryModelTagField(),
       ],
     );
   }
 
   Widget _buildSummaryModelTagField() {
+    final c = FocusColors.of(context);
     return TextFormField(
       // Keyed on the value: `initialValue` is only read on the first build, so
       // without this, picking a preset above would leave a stale tag showing.
       key: ValueKey(_settings.meetingSummaryModel),
       initialValue: _settings.meetingSummaryModel,
-      style: const TextStyle(color: Colors.white, fontSize: 13),
-      decoration: InputDecoration(
+      style: FocusText.mono.copyWith(fontSize: 13, color: c.ink),
+      decoration: const InputDecoration(
         hintText: 'hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_XL',
-        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
-        ),
       ),
       onChanged: (value) => _updateSettings(
         _settings.copyWith(meetingSummaryModel: value.trim()),
@@ -860,112 +732,52 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     final devices = _settings.audioDevicePrefs;
 
     if (devices.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: const Text(
-          'No devices remembered yet. Record once and the device you were '
-          'listening on will appear here.',
-          style: TextStyle(color: Colors.white38, fontSize: 12),
-        ),
+      return const FocusGroup(
+        children: [
+          FocusRow(
+            title: 'No devices remembered yet.',
+            subtitle: 'Record once and the device you were listening on will '
+                'appear here.',
+          ),
+        ],
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-            child: Row(
-              children: const [
-                SizedBox(
-                  width: 70,
-                  child: Text(
-                    'Skip',
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'DEVICE',
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 40),
-              ],
-            ),
-          ),
-          for (int i = 0; i < devices.length; i++)
-            _buildDeviceRow(devices[i], i, isLast: i == devices.length - 1),
-        ],
-      ),
+    return FocusGroup(
+      children: [
+        for (int i = 0; i < devices.length; i++)
+          _buildDeviceRow(devices[i], i),
+      ],
     );
   }
 
-  Widget _buildDeviceRow(AudioDevicePref device, int index, {required bool isLast}) {
-    return Container(
-      decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : Border(
-                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
-              ),
-      ),
-      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
-      child: Row(
+  Widget _buildDeviceRow(AudioDevicePref device, int index) {
+    final kind = device.isBluetooth ? 'Bluetooth' : 'Wired or built-in';
+    return FocusRow(
+      title: device.displayName,
+      subtitle: device.skipDuck
+          ? '$kind. Volume is left alone.'
+          : '$kind. Volume is lowered while recording.',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 70,
-            child: Checkbox(
-              value: device.skipDuck,
-              onChanged: (value) {
-                final updated = List<AudioDevicePref>.from(_settings.audioDevicePrefs);
-                updated[index] = device.copyWith(skipDuck: value ?? false);
-                _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
-              },
-            ),
+          FocusSwitch(
+            value: device.skipDuck,
+            onChanged: (value) {
+              final updated =
+                  List<AudioDevicePref>.from(_settings.audioDevicePrefs);
+              updated[index] = device.copyWith(skipDuck: value);
+              _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
+            },
           ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  device.displayName,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  device.isBluetooth ? 'Bluetooth' : 'Wired or built-in',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(width: 4),
           IconButton(
-            icon: const Icon(Icons.close, size: 16, color: Colors.white38),
+            icon: const Icon(Icons.close, size: 16),
             tooltip: 'Forget this device',
-            splashRadius: 16,
             onPressed: () {
-              final updated = List<AudioDevicePref>.from(_settings.audioDevicePrefs)
-                ..removeAt(index);
+              final updated =
+                  List<AudioDevicePref>.from(_settings.audioDevicePrefs)
+                    ..removeAt(index);
               _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
             },
           ),
@@ -974,53 +786,42 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.bold,
-        color: Colors.white,
-      ),
-    );
-  }
-
-  Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        color: Colors.white70,
-      ),
-    );
-  }
-
   Widget _buildCustomTermsField() {
     final textController = TextEditingController();
+
+    void addTerm(String raw) {
+      final value = raw.trim();
+      if (value.isNotEmpty && !_settings.customTerms.contains(value)) {
+        final updatedTerms = List<String>.from(_settings.customTerms)
+          ..add(value);
+        _updateSettings(_settings.copyWith(customTerms: updatedTerms));
+        textController.clear();
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Display current terms as chips
-        if (_settings.customTerms.isNotEmpty)
+        // Current terms as chips
+        if (_settings.customTerms.isNotEmpty) ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: _settings.customTerms.map((term) {
               return Chip(
-                label: Text(term, style: const TextStyle(color: Colors.white)),
-                deleteIcon: const Icon(Icons.close, size: 18, color: Colors.white70),
+                label: Text(term),
+                deleteIcon: const Icon(Icons.close, size: 14),
+                deleteButtonTooltipMessage: 'Remove',
                 onDeleted: () {
-                  final updatedTerms = List<String>.from(_settings.customTerms);
-                  updatedTerms.remove(term);
+                  final updatedTerms = List<String>.from(_settings.customTerms)
+                    ..remove(term);
                   _updateSettings(_settings.copyWith(customTerms: updatedTerms));
                 },
-                backgroundColor: const Color(0xFF3D3D3D),
               );
             }).toList(),
           ),
-        if (_settings.customTerms.isNotEmpty) const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
 
         // Input field to add new terms
         Row(
@@ -1028,37 +829,13 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             Expanded(
               child: TextField(
                 controller: textController,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration().copyWith(
-                  hintText: 'Add a custom term...',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                ),
-                onSubmitted: (value) {
-                  if (value.trim().isNotEmpty && !_settings.customTerms.contains(value.trim())) {
-                    final updatedTerms = List<String>.from(_settings.customTerms);
-                    updatedTerms.add(value.trim());
-                    _updateSettings(_settings.copyWith(customTerms: updatedTerms));
-                    textController.clear();
-                  }
-                },
+                decoration: const InputDecoration(hintText: 'Add a term'),
+                onSubmitted: addTerm,
               ),
             ),
             const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: () {
-                final value = textController.text;
-                if (value.trim().isNotEmpty && !_settings.customTerms.contains(value.trim())) {
-                  final updatedTerms = List<String>.from(_settings.customTerms);
-                  updatedTerms.add(value.trim());
-                  _updateSettings(_settings.copyWith(customTerms: updatedTerms));
-                  textController.clear();
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
+            OutlinedButton(
+              onPressed: () => addTerm(textController.text),
               child: const Text('Add'),
             ),
           ],
@@ -1066,24 +843,4 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       ],
     );
   }
-
-  InputDecoration _inputDecoration() {
-    return InputDecoration(
-      filled: true,
-      fillColor: const Color(0xFF2D2D2D),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Colors.white12),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Colors.white12),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Colors.blue),
-      ),
-    );
-  }
-
 }
