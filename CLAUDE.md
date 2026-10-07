@@ -92,7 +92,7 @@ cd backend && pytest tests/ -q
 - **Communication**: WebSocket on `127.0.0.1`. `server.py` defaults to `--port 0`, but the Flutter side pins **8082** ([backend_service.dart](lib/services/backend_service.dart)); the server prints `SERVER_PORT:<n>` on stdout and Flutter parses that line to confirm startup
 - **Backend lifetime**: Flutter passes `--parent-pid`, and [parent_watchdog.py](backend/parent_watchdog.py) exits the backend when the app dies (kqueue, zero idle cost). macOS does not kill children with their parent, and quit via Apple Event, crash or force-quit all skip Dart cleanup — an orphan kept 8082 for 38 min before this
 - **Audio Processing**: 16kHz PCM audio streaming in 20-40ms chunks
-- **Models**: `ggml-large-v3-turbo.bin` bundled, Metal GPU acceleration
+- **Models**: downloaded at first run, not bundled — see *First-run setup and models*. `server.py --model <path>`; Metal GPU acceleration
 
 ### Key Components
 
@@ -119,6 +119,17 @@ cd backend && pytest tests/ -q
 Settings → Advanced → *AI Formatting (local)*, on by default, runs each dictation through `gemma4:e4b` in Ollama after the rule pass: fillers, natural punctuation, numbers as digits, Japanese 、。. It adds ~1 s. The model and prompt were picked by measurement (2026-09-25, 22 realistic EN/JA dictations through whisper): e4b with rules **plus few-shot examples** passed 22/22; gemma4:e2b and qwen3.5:4b/9b managed 17–18, with e2b translating Japanese into English and the Qwens leaving Japanese fillers. The examples, not the rules, are what made fillers like えーと go away.
 
 The LLM output is **discarded** — and the rule-based text pasted — when Ollama is unreachable, the model is missing, it times out, the language changed, or the output is outside 40–125% of the input size (words for English, characters for Japanese). That size band is what catches a small model *answering* a dictated question or dropping sentences. The floor drops to 12% only when the dictation carries a correction cue (*no wait*, *never mind*, *scratch that*, いや, じゃなくて…), because resolving a change of mind to the final decision is the one legitimate way to lose most of the text; self-correction resolution needed its own few-shot examples — the rule alone was ignored. Output with a doubled kana run the speaker never said is also discarded: e4b turns 「4時からです」 into 「4時からからです」 without an example showing it. The rule pass runs again on accepted output, so Japanese punctuation is guaranteed by code rather than by the prompt. `start_session` preloads the model so its load overlaps with speaking.
+
+### First-run setup and models
+
+A release ships **no whisper model** (99 MB instead of 1.7 GB). Until `Settings.setupCompleted` is true *and* the chosen `speechModelId` resolves to a file, `AppService.initialize` opens the setup window instead of starting hotkeys and the backend; finishing setup (`finish_setup`) starts them. Opening Settings from the menu bar, or reopening the app, goes to setup while that is so.
+
+- Catalog: [lib/models/model_catalog.dart](lib/models/model_catalog.dart) — four whisper models (Turbo, Turbo q8/q5, Small) with HuggingFace's own SHA-256 and sizes, and the Ollama models for the AI features.
+- Downloads: [file_downloader.dart](lib/services/file_downloader.dart) writes `<file>.part`, resumes with `Range`, follows redirects **by hand** (HuggingFace 302s to its CDN and the Range header must survive the hop), and renames into place only after the checksum matches — a file at the final path is always complete. Models go to `~/Library/Application Support/UltraWhisper/models`.
+- Resolution ([model_manager.dart](lib/services/model_manager.dart)) also looks in the checkout's `backend/whisper.cpp/models` in Debug, so a developer never downloads.
+- Downloads run in the **main** engine. The setup and settings windows are separate `desktop_multi_window` engines **with no plugins registered**, so they reach anything native — permissions, downloads, saving — via `DesktopMultiWindow.invokeMethod(0, …)` handled in `main.dart`, and poll `models_status`. Only `dart:io` works inside them; that is why [app_paths.dart](lib/utils/app_paths.dart) builds paths from `$HOME` instead of path_provider.
+- Changing the model in Settings restarts the backend on the new file (`BackendService.restart(modelPath:)`); during a meeting it waits until the meeting is discarded.
+- The recommendation ([hardware_probe.dart](lib/services/hardware_probe.dart) `recommendSetup`) is driven by memory, since Apple Silicon has one pool for CPU and GPU: Turbo from 16 GB, Turbo q5 below; AI formatting recommended from 24 GB (allowed from 16), notes from 48 GB (allowed from 24); nothing that leaves under 5 GB of disk. `test/model_downloads_test.dart` pins it per memory size.
 
 ### Communication Protocol
 - WebSocket messages use JSON envelope `{type, id, data}` with raw binary frames for audio
@@ -168,7 +179,9 @@ Dictation is refused while a meeting records: both want the microphone through t
 
 ### Departure from the all-bundled policy
 
-Meeting-note summarization talks to **Ollama** over `127.0.0.1:11434` and is the one part of the app that is *not* self-contained: it needs Ollama installed and a model pulled.
+Meeting-note summarization and AI formatting talk to **Ollama** and are the one part of the app that is not bundled. They are still installable from inside the app: [ollama_service.dart](lib/services/ollama_service.dart) uses the user's own Ollama on `127.0.0.1:11434` when it answers, and otherwise downloads a **pinned** Ollama release (`v0.40.0`, GitHub's SHA-256) into `~/Library/Application Support/UltraWhisper/runtime` and runs `ollama serve` headless on **11435**, models in `…/ollama-models`. The client names the host per request (`post.ollamaHost`, `summarize.ollamaHost`), so installing the private copy needs no backend restart.
+
+The private copy is started with a **clean environment** (`includeParentEnvironment: false`) — its `libggml*.dylib` have whisper's filenames (below). A `/bin/sh` watchdog takes `--parent-pid`'s job: it kills `ollama serve` when the app dies. It sleeps with `sleep 5 & wait $!`, not a bare `sleep`: sh defers a trap until the foreground command returns, so `stop()`'s SIGTERM waited out the sleep, the SIGKILL fallback fired, and `ollama serve` was orphaned (verified 2026-10-07).
 
 This is deliberate. Bundling a `llama-server` would mean vendoring llama.cpp and shipping its ggml dylibs — which have **the same filenames** as whisper.cpp's (`libggml.dylib`, `libggml-base.dylib`, `libggml-metal.dylib`), all resolved via `@rpath`. Since `DYLD_LIBRARY_PATH` already points at whisper's copies and dyld consults it *before* `@rpath`, a bundled llama-server would load whisper's ggml and fail.
 
@@ -184,7 +197,8 @@ Consequently, **summarization degrades gracefully rather than failing**: if Olla
 
 - Target platform is **macOS 13+ on Apple Silicon** (optimized for M3 Max with 32GB RAM)
 - Backend will be packaged as embedded Python runtime inside .app bundle
-- Models stored in `~/Library/Application Support/UltraWhisper/models/`
+- Models stored in `~/Library/Application Support/UltraWhisper/models/` (whisper) and `…/ollama-models/` (the private Ollama's)
+- Releases are signed with an Apple **Development** certificate and not notarized, so a downloaded copy is blocked on first launch; users click **Open Anyway** in Privacy & Security (README → Installation). Fixing that needs a paid Developer ID
 - WebSocket communication on `127.0.0.1` with ephemeral port negotiation
 - Paste goes through the clipboard, and the transcript **stays** there afterwards. Settings → Advanced → Pasting has a toggle (`keepTranscriptOnClipboard`, default on) that restores the previous clipboard instead. The old behaviour restored unconditionally, which meant the one thing the user could not recover — the text they had just spoken — was the thing that got thrown away
 - AI Handoff uses configurable keystroke sequence: `⌥Space → ⌘N → ⌃V → Enter` with 100ms delays
@@ -195,8 +209,8 @@ The app is **completely self-contained** with no external dependencies:
 
 - **Bundled Python Runtime**: Python 3.12 (arm64) with websockets + numpy (~91 MB)
 - **whisper.cpp Libraries**: All GGML libraries with Metal GPU support (~3 MB)
-- **Whisper Model**: large-v3-turbo GGML model embedded in app (1.5 GB)
-- **Total App Size**: ~1.7 GB
+- **Whisper Model**: not bundled — first-run setup downloads it (190 MB – 1.6 GB)
+- **Total App Size**: ~100 MB
 
 **Build Process** ([macos/Scripts/copy_backend.sh](macos/Scripts/copy_backend.sh)):
 1. Copies Python runtime and dependencies into app bundle

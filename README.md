@@ -16,10 +16,11 @@
 
 ## Features
 
-- **🔒 100% Local & Private** - All transcription happens on your device. No internet required, no data leaves your Mac
+- **🔒 100% Local & Private** - All transcription happens on your device. After the one-time model download no internet is needed, and no audio or text leaves your Mac
 - **⚡ Blazing Fast** - Metal GPU acceleration on Apple Silicon for real-time transcription
 - **📋 Auto-Paste** - Automatically pastes transcribed text into your current app when done
-- **🎙️ Two Capture Modes** - Choose between hold-to-talk or toggle recording
+- **🎙️ Two Hotkeys** - `⌥⇧R` to dictate, `⌥⇧E` to dictate and press Return
+- **🧭 Guided Setup** - A first-run window checks permissions, sets your shortcuts, and picks models that suit your Mac
 - **🌍 Multi-Language** - Auto-detect English and Japanese (more languages coming soon)
 - **🎯 Menu Bar Integration** - Clean, native macOS status bar app with quick controls
 - **📚 Custom Dictionary** - Add technical terms and domain-specific keywords for better accuracy
@@ -30,32 +31,35 @@
 
 ### Download Pre-Built App
 
-1. Download the latest `UltraWhisper-v0.5.0-macOS.zip` from the [Releases](https://github.com/Rum1324/ultra-whisper-arm64/releases/latest) page
+1. Download the latest `ultra-whisper-arm64-macos-v*.zip` (about 100 MB) from the [Releases](https://github.com/Rum1324/ultra-whisper-arm64/releases/latest) page
 2. Unzip and move **UltraWhisper.app** to your Applications folder
-3. Right-click the app and select **Open** (required for first launch on macOS)
-4. Grant permissions when prompted:
-   - **Microphone** - For audio capture
-   - **Accessibility** - For global hotkeys and auto-paste
+3. Open it once. macOS will refuse, because the app is not notarized by Apple — this is expected:
+   - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the UltraWhisper message, then confirm.
+   - Or, in Terminal: `xattr -dr com.apple.quarantine /Applications/UltraWhisper.app`
+4. The setup window walks you through the rest:
+   - **Microphone** and **Accessibility** permissions
+   - Your two shortcuts
+   - The speech model, recommended for your Mac's memory and disk (190 MB – 1.6 GB download)
+   - Optional local AI — tidier dictation and meeting notes. UltraWhisper downloads its own copy of [Ollama](https://ollama.com) for these, or uses yours if it is already running. Nothing else needs installing.
+
+Models can be downloaded, switched or deleted later in **Settings → Speech model** and **Local AI**. They live in `~/Library/Application Support/UltraWhisper`.
 
 ### System Requirements
 
 - macOS 13.0 (Ventura) or later
-- Apple Silicon (M1, M2, M3, or later)
-- 16GB RAM recommended for optimal performance
+- Apple Silicon (M1 or later)
+- 8 GB memory works with the light speech model; 16 GB for the full one; 24 GB+ for AI formatting
+- 1–2 GB free disk, plus ~10 GB for AI formatting and ~12–17 GB for meeting notes
 
 ## Usage
 
 ### Quick Start
 
 1. **Launch UltraWhisper** - Look for the app icon in your menu bar
-2. **Start Recording**:
-   - Click the menu bar icon → "Start Recording"
-   - Or use your configured hotkey (default: hold ⌘⇧Space)
-3. **Speak Clearly** into your microphone
-4. **Stop Recording**:
-   - Release the hotkey (hold-to-talk mode)
-   - Or click "Stop Recording" (toggle mode)
-5. **Get Your Text** - Transcribed text is automatically pasted into your active app
+2. **Start Recording** - press `⌥⇧R` (or click the menu bar icon → "Start Recording")
+3. **Speak** into your microphone
+4. **Stop Recording** - press `⌥⇧R` again, or `⌥⇧E` to also press Return after pasting
+5. **Get Your Text** - Transcribed text is pasted into your active app and left on the clipboard
 
 ### Customization
 
@@ -74,19 +78,21 @@ UltraWhisper uses a hybrid architecture to deliver fast, private transcription:
 1. **Frontend**: Flutter macOS app provides the native UI and system integration
 2. **Backend**: Python service running [whisper.cpp](https://github.com/ggerganov/whisper.cpp) with Metal GPU acceleration
 3. **GPU Acceleration**: Metal backend leverages Apple Silicon's GPU for real-time performance
-4. **Model**: Whisper large-v3-turbo (GGML format) stored locally in the app bundle
+4. **Model**: Whisper large-v3-turbo or a lighter variant (GGML format), downloaded once at setup and stored locally
 5. **Communication**: WebSocket connection on localhost for low-latency audio streaming
 
 **Privacy First**: Everything runs locally on your Mac. No cloud services, no telemetry, no data collection.
 
 ## Troubleshooting
 
-### App won't open / "App is damaged" error
-This is a macOS security feature. Fix:
+### App won't open / "Apple could not verify" / "App is damaged"
+The app is not notarized, so macOS blocks the first launch. Either click **Open Anyway** in **System Settings → Privacy & Security**, or run:
 ```bash
-xattr -cr /Applications/UltraWhisper.app
+xattr -dr com.apple.quarantine /Applications/UltraWhisper.app
 ```
-Then right-click the app and select "Open".
+
+### Setup window closed before the download finished
+Click the menu bar icon → **Settings**, or open UltraWhisper again from Applications — setup reopens until a speech model is in place. Downloads resume where they stopped.
 
 ### No transcription output
 - Check microphone permissions in **System Settings → Privacy & Security → Microphone**
