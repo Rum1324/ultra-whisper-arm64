@@ -7,7 +7,7 @@ class AppDelegate: FlutterAppDelegate {
   private var statusBarEventChannel: FlutterMethodChannel?
 
   override func applicationDidFinishLaunching(_ aNotification: Notification) {
-    let controller : FlutterViewController = mainFlutterWindow?.contentViewController as! FlutterViewController
+    let controller: FlutterViewController = (mainFlutterWindow as! MainFlutterWindow).flutterViewController
     let keystrokeChannel = FlutterMethodChannel(name: "com.glassywhisper.keystroke",
                                               binaryMessenger: controller.engine.binaryMessenger)
 

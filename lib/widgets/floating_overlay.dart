@@ -16,6 +16,7 @@ class FloatingOverlay extends StatefulWidget {
 class _FloatingOverlayState extends State<FloatingOverlay>
     with TickerProviderStateMixin {
   late AnimationController _animationController;
+  late AppService _appService;
   final List<double> _waveformHeights = List.generate(32, (index) => 0.1);
   final List<double> _frequencyBands = List.generate(8, (index) => 0.1);
   final List<double> _peakHeights = List.generate(32, (index) => 0.1);
@@ -27,11 +28,29 @@ class _FloatingOverlayState extends State<FloatingOverlay>
       duration: const Duration(milliseconds: 50),
       vsync: this,
     );
-    _animationController.repeat();
+    _appService = context.read<AppService>();
+    _appService.addListener(_syncAnimation);
+    _syncAnimation();
+  }
+
+  /// Ticks only while there is audio to show. The overlay window is always on
+  /// screen, so a ticker left repeating renders a frame on every display
+  /// refresh for as long as the app runs — ~30% CPU while doing nothing.
+  void _syncAnimation() {
+    final state = _appService.state;
+    final active = state.isOverlayVisible &&
+        (state.recordingState == RecordingState.recording ||
+            state.recordingState == RecordingState.processing);
+    if (active && !_animationController.isAnimating) {
+      _animationController.repeat();
+    } else if (!active && _animationController.isAnimating) {
+      _animationController.stop();
+    }
   }
 
   @override
   void dispose() {
+    _appService.removeListener(_syncAnimation);
     _animationController.dispose();
     super.dispose();
   }
