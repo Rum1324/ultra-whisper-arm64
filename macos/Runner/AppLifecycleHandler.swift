@@ -35,6 +35,16 @@ class AppLifecycleHandler {
                 DispatchQueue.main.async { result(granted) }
             }
 
+        case "raiseOverlay":
+            // Above every other window, but without activating UltraWhisper:
+            // the app being dictated into must keep keyboard focus, or the
+            // paste lands nowhere. The window stays at normal level, so the
+            // next app the user clicks covers it again on its own.
+            DispatchQueue.main.async {
+                NSApp.windows.first { $0 is MainFlutterWindow }?.orderFrontRegardless()
+                result(nil)
+            }
+
         default:
             result(FlutterMethodNotImplemented)
         }
