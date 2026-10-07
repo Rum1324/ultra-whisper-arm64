@@ -90,6 +90,7 @@ cd backend && pytest tests/ -q
 - **Frontend**: Flutter macOS app provides UI (menu bar status, floating overlay, settings window)
 - **Backend**: Python service calling whisper.cpp through ctypes ([backend/whisper_wrapper.py](backend/whisper_wrapper.py))
 - **Communication**: WebSocket on `127.0.0.1`. `server.py` defaults to `--port 0`, but the Flutter side pins **8082** ([backend_service.dart](lib/services/backend_service.dart)); the server prints `SERVER_PORT:<n>` on stdout and Flutter parses that line to confirm startup
+- **Backend lifetime**: Flutter passes `--parent-pid`, and [parent_watchdog.py](backend/parent_watchdog.py) exits the backend when the app dies (kqueue, zero idle cost). macOS does not kill children with their parent, and quit via Apple Event, crash or force-quit all skip Dart cleanup — an orphan kept 8082 for 38 min before this
 - **Audio Processing**: 16kHz PCM audio streaming in 20-40ms chunks
 - **Models**: `ggml-large-v3-turbo.bin` bundled, Metal GPU acceleration
 

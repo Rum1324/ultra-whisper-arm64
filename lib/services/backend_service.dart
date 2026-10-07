@@ -52,7 +52,7 @@ class BackendService {
               if (result.exitCode == 0) {
                 AppLogger.info('Found running backend process with PID $pid, killing it...');
                 await Process.run('kill', ['-9', pid.toString()]);
-                await Future.delayed(const Duration(seconds: 1));
+                await _waitForPortRelease(_backendPort);
               }
             }
           } catch (e) {
@@ -91,11 +91,10 @@ class BackendService {
                 await Process.run('kill', ['-9', trimmed]);
               }
 
-              // Wait a moment for the port to be released
-              await Future.delayed(const Duration(seconds: 1));
-
-              if (!await _isPortInUse(_backendPort)) {
+              if (await _waitForPortRelease(_backendPort)) {
                 AppLogger.success('Successfully cleaned up orphaned backend process');
+              } else {
+                AppLogger.error('Port $_backendPort is still in use after cleanup');
               }
             }
           } catch (e) {
@@ -154,7 +153,15 @@ class BackendService {
       AppLogger.debug('Starting backend process...');
       _backendProcess = await Process.start(
         pythonPath,
-        [backendPath, '--port', '$_backendPort', '--host', '127.0.0.1'],
+        [
+          backendPath,
+          '--port', '$_backendPort',
+          '--host', '127.0.0.1',
+          // The backend exits on its own when this process does. Quitting via
+          // an Apple Event, a crash, or a force-quit all skip Dart cleanup,
+          // and macOS does not take children down with their parent.
+          '--parent-pid', '$pid',
+        ],
         mode: ProcessStartMode.normal,
         environment: environment,
       );
@@ -193,6 +200,24 @@ class BackendService {
     }
   }
   
+  /// Wait for whatever was listening on [port] to let go of it.
+  ///
+  /// A SIGKILLed process releases its socket within milliseconds, but not
+  /// synchronously with `kill` returning. Polling instead of a fixed sleep
+  /// makes the common case fast and the slow case visible: returns false if
+  /// the port is still taken after [timeout].
+  Future<bool> _waitForPortRelease(
+    int port, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (await _isPortInUse(port)) {
+      if (DateTime.now().isAfter(deadline)) return false;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return true;
+  }
+
   /// The directory holding the running executable.
   ///
   /// Every path below is derived from this rather than from

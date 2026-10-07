@@ -19,6 +19,7 @@ import numpy as np
 from whisper_wrapper import WhisperModel
 from postprocess import apply_post_processing
 import dictation_formatter
+import parent_watchdog
 from meeting import (
     MIN_WINDOW_SAMPLES,
     TRACK_SPEAKERS,
@@ -741,11 +742,18 @@ async def main():
     parser.add_argument('--port', type=int, default=0, help='Port to listen on (0 for random)')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser.add_argument('--parent-pid', type=int, default=None,
+                        help='Exit when this process exits (the app passes its own pid)')
 
     args = parser.parse_args()
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # Before the model load, which takes seconds: an app that dies during it
+    # must not leave a backend behind either.
+    if args.parent_pid is not None:
+        parent_watchdog.start(args.parent_pid)
 
     # Initialize backend
     backend = WhisperCppBackend()

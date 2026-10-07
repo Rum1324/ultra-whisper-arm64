@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -57,11 +58,29 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
     with WindowListener {
   late AppService _appService;
   bool _isInitialized = false;
+  late final AppLifecycleListener _lifecycleListener;
 
   @override
   void initState() {
     super.initState();
+    // Every NSApplication termination — ⌘Q, the Dock's Quit, logout, and
+    // `osascript -e 'quit app "UltraWhisper"'` — reaches Dart as
+    // System.requestAppExit. Without a handler the framework answers "exit"
+    // at once and cleanup never runs. The backend's own parent-pid watchdog
+    // covers crashes; this covers the orderly path.
+    _lifecycleListener = AppLifecycleListener(onExitRequested: _onExitRequested);
     _initializeApp();
+  }
+
+  Future<AppExitResponse> _onExitRequested() async {
+    if (_isInitialized) {
+      try {
+        await _appService.cleanup();
+      } catch (e) {
+        debugPrint('Cleanup before exit failed: $e');
+      }
+    }
+    return AppExitResponse.exit;
   }
 
   Future<void> _initializeApp() async {
@@ -283,6 +302,7 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
     windowManager.removeListener(this);
     _appService.removeListener(_handleAppServiceChanges);
     _appService.dispose();

@@ -33,6 +33,9 @@ cp -f "${PROJECT_DIR}/backend/requirements.txt" "${BUNDLE_RESOURCES}/backend/"
 echo "Copying backend/meeting.py..."
 cp -f "${PROJECT_DIR}/backend/meeting.py" "${BUNDLE_RESOURCES}/backend/"
 
+echo "Copying backend/parent_watchdog.py..."
+cp -f "${PROJECT_DIR}/backend/parent_watchdog.py" "${BUNDLE_RESOURCES}/backend/"
+
 echo "Copying backend/summarize/..."
 rm -rf "${BUNDLE_RESOURCES}/backend/summarize"
 cp -R "${PROJECT_DIR}/backend/summarize" "${BUNDLE_RESOURCES}/backend/"
