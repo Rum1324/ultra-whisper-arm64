@@ -147,11 +147,11 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
     );
 
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
-      // Keep normal window behavior - no frameless, no workspace visibility
-      // Always float, on every Space and over full-screen apps: the island
-      // has to be seen above the app you are dictating into. Harmless while
-      // idle, when the window draws nothing and lets clicks through.
-      await windowManager.setAlwaysOnTop(true);
+      // A normal window, on every Space and over full-screen apps. It is not
+      // pinned on top: a recording raises it once (AppService._raiseOverlay)
+      // and clicking another app lets that app cover it again. Idle it draws
+      // nothing and lets clicks through.
+      await windowManager.setAlwaysOnTop(false);
       await windowManager.setVisibleOnAllWorkspaces(
         true,
         visibleOnFullScreen: true,

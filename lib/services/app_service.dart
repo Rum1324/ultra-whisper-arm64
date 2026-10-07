@@ -569,9 +569,10 @@ class AppService extends ChangeNotifier {
         }
       }
 
-      // Bring window to front during recording if enabled
-      if (_settings.bringToFrontDuringRecording) {
-        await _bringWindowToFront();
+      // Raise the island above whatever is in front, once, as recording
+      // starts. Nothing keeps it there.
+      if (_settings.showDictationOverlay) {
+        await _raiseOverlay();
       }
 
       // Play audio cue to indicate recording start
@@ -776,11 +777,6 @@ class AppService extends ChangeNotifier {
         await _volumeControlService.restoreVolumeAfterRecording();
       }
 
-      // Send window to back even if there was an error (only if we brought it to front)
-      if (_settings.bringToFrontDuringRecording) {
-        await _sendWindowToBack();
-      }
-
       _updateState(
         _state.copyWith(
           recordingState: RecordingState.error,
@@ -836,11 +832,6 @@ class AppService extends ChangeNotifier {
       await _volumeControlService.restoreVolumeAfterRecording();
     }
 
-    // Send window to back before pasting if we brought it to front
-    if (_settings.bringToFrontDuringRecording) {
-      await _sendWindowToBack();
-    }
-
     // Perform paste action
     try {
       debugPrint('Attempting to perform paste action...');
@@ -888,23 +879,13 @@ class AppService extends ChangeNotifier {
     );
   }
 
-  Future<void> _bringWindowToFront() async {
+  /// Order the overlay window to the front without activating the app, so
+  /// the app being dictated into keeps keyboard focus for the paste.
+  Future<void> _raiseOverlay() async {
     try {
-      await windowManager.setAlwaysOnTop(true);
-      await windowManager.focus();
-      AppLogger.debug('Window brought to front for recording');
+      await _lifecycleChannel.invokeMethod('raiseOverlay');
     } catch (e) {
-      AppLogger.error('Failed to bring window to front', e);
-    }
-  }
-
-  Future<void> _sendWindowToBack() async {
-    try {
-      // Keep floating: the island must stay above the app being dictated into.
-      await windowManager.setAlwaysOnTop(true);
-      AppLogger.debug('Window sent to back after recording');
-    } catch (e) {
-      AppLogger.error('Failed to send window to back', e);
+      AppLogger.error('Failed to raise the overlay', e);
     }
   }
 
