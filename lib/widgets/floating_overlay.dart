@@ -103,11 +103,15 @@ class _FloatingOverlayState extends State<FloatingOverlay>
         RecordingState.error => 'Error',
       };
 
-  /// Which Focus level dot each recording state shows.
-  FocusLevel _levelFor(RecordingState state) {
-    // TODO(human): map each RecordingState to a FocusLevel.
-    return FocusLevel.offline;
-  }
+  /// Which Focus level dot each recording state shows. Only an error pulses:
+  /// idle sits on screen for hours, and a pulsing dot there would keep a
+  /// ticker running the whole time.
+  FocusLevel _levelFor(RecordingState state) => switch (state) {
+        RecordingState.idle => FocusLevel.offline,
+        RecordingState.recording => FocusLevel.calm,
+        RecordingState.processing => FocusLevel.watch,
+        RecordingState.error => FocusLevel.risk,
+      };
 
   Widget _buildAudioWaveform(AppState state) {
     // Update waveform heights based on current audio level
