@@ -14,6 +14,7 @@ import 'package:ultrawhisper/services/app_service.dart';
 import 'package:ultrawhisper/services/meeting_detector.dart';
 import 'package:ultrawhisper/widgets/app_content.dart';
 import 'package:ultrawhisper/widgets/floating_overlay.dart';
+import 'package:ultrawhisper/widgets/thinking_orb.dart';
 
 /// Minimal stand-in for [AppService]: holds an [AppState] and records the
 /// recording calls the UI makes. Everything else routes through noSuchMethod,
@@ -76,8 +77,8 @@ void main() {
     expect(find.byType(FloatingOverlay), findsOneWidget);
     expect(find.byIcon(Icons.mic), findsOneWidget);
     expect(find.byIcon(Icons.stop), findsNothing);
-    // One AnimatedContainer per waveform bar.
-    expect(find.byType(AnimatedContainer), findsNWidgets(32));
+    // The listening orb stands in for the old waveform.
+    expect(find.byType(ThinkingOrb), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });
@@ -123,7 +124,7 @@ void main() {
 
     expect(find.byType(FloatingOverlay), findsOneWidget);
     expect(find.byIcon(Icons.mic), findsNothing);
-    expect(find.byType(AnimatedContainer), findsNothing);
+    expect(find.byType(ThinkingOrb), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });
