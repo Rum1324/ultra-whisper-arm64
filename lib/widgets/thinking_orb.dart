@@ -1,91 +1,145 @@
 import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+
+/// What the orb is doing.
+enum OrbMode {
+  /// Following the microphone: still in silence, swelling with speech.
+  listening,
+
+  /// A slow, even swell while the transcript is written.
+  writing,
+}
 
 /// The "listening" thinking orb: a dotted sphere with a waveform rolling
 /// through its rings.
 ///
-/// Ported from `frameWave` in thinking-orbs by Jakub Antalik
-/// (https://github.com/Jakubantalik/thinking-orbs, MIT), at its 64px preset.
-/// The geometry is the original's, line for line; two things are added for
-/// dictation:
-/// - [level] (0–1, the microphone level) scales the wave's amplitude, so the
-///   orb swells when you speak and settles when you pause.
-/// - The orb only advances while [repaint] ticks. The overlay stops its
-///   ticker when idle, which freezes the orb on its last frame for free.
+/// Geometry ported from `frameWave` in thinking-orbs by Jakub Antalik
+/// (https://github.com/Jakubantalik/thinking-orbs, MIT). The original rolls
+/// on a wall clock; here the voice drives it instead. [level] sets how far the
+/// rings swell and how fast the wave rolls and the sphere turns, so silence
+/// is a still, round sphere and speech is what moves it.
 ///
-/// Drawn in light ink for a dark ground, as the original's dark theme.
-class ThinkingOrb extends StatelessWidget {
+/// The orb owns its ticker, so it costs nothing once unmounted: the overlay
+/// only shows it while dictating.
+class ThinkingOrb extends StatefulWidget {
   const ThinkingOrb({
     super.key,
-    required this.repaint,
     this.level = 0,
-    this.speed = 1,
-    this.size = 44,
+    this.mode = OrbMode.listening,
+    this.size = 32,
   });
 
-  /// Anything that ticks while the orb should move.
-  final Listenable repaint;
-
-  /// Microphone level, 0–1.
+  /// Microphone level as the app reports it, 0–100.
   final double level;
 
-  /// Multiplier on the preset's tempo.
-  final double speed;
-
+  final OrbMode mode;
   final double size;
+
+  @override
+  State<ThinkingOrb> createState() => _ThinkingOrbState();
+}
+
+class _ThinkingOrbState extends State<ThinkingOrb>
+    with SingleTickerProviderStateMixin {
+  final _motion = _OrbMotion();
+  Ticker? _ticker;
+  Duration _last = Duration.zero;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (still) {
+      _ticker?.dispose();
+      _ticker = null;
+      _motion.phase = 0.6;
+    } else if (_ticker == null) {
+      _ticker = createTicker(_tick)..start();
+    }
+  }
+
+  void _tick(Duration elapsed) {
+    final dt = ((elapsed - _last).inMicroseconds / 1e6).clamp(0.0, 0.1);
+    _last = elapsed;
+    _motion.advance(dt, _target());
+  }
+
+  /// The swell the orb is heading for, 0–1. Speech RMS sits low on a linear
+  /// scale, so it is lifted logarithmically, as the old waveform did.
+  double _target() {
+    if (widget.mode == OrbMode.writing) return 0.12;
+    final x = (widget.level / 100).clamp(0.0, 1.0);
+    return math.log(1 + 9 * x) / math.ln10;
+  }
+
+  @override
+  void dispose() {
+    _ticker?.dispose();
+    _motion.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: size,
-      child: CustomPaint(
-        painter: _WaveOrbPainter(repaint: repaint, level: level, speed: speed),
-      ),
+      dimension: widget.size,
+      child: CustomPaint(painter: _WaveOrbPainter(_motion)),
     );
   }
 }
 
-/// One clock for every orb, as in the original: orbs stay in phase, and
-/// pausing and resuming never jumps.
-final Stopwatch _clock = Stopwatch()..start();
+/// The orb's state between frames: how swollen it is and how far the wave
+/// has rolled. Notifies the painter, so a frame repaints without a rebuild.
+class _OrbMotion extends ChangeNotifier {
+  double swell = 0;
+  double phase = 0;
+
+  // Tempo of the original's 64px preset.
+  static const _presetSpeed = 4.388;
+
+  void advance(double dt, double target) {
+    // Rise fast, fall slower: syllables read as one gesture, not a flicker.
+    final tau = target > swell ? 0.05 : 0.22;
+    swell += (target - swell) * (1 - math.exp(-dt / tau));
+    // Near-still in silence; up to the original's full tempo when speaking.
+    phase += dt * _presetSpeed * (0.06 + 0.94 * swell);
+    notifyListeners();
+  }
+}
 
 class _WaveOrbPainter extends CustomPainter {
-  _WaveOrbPainter({
-    required Listenable repaint,
-    required this.level,
-    required this.speed,
-  }) : super(repaint: repaint);
+  _WaveOrbPainter(this.motion) : super(repaint: motion);
 
-  final double level;
-  final double speed;
+  final _OrbMotion motion;
 
-  // The 64px preset: base profile rings 15 × lonDensity 40, count 0.341
-  // (each side √0.341), speed 4.388; radii at size 1.
-  static const _presetSpeed = 4.388;
-  static final _countScale = math.sqrt(0.341);
-  static final _rings = math.max(2, (15 * _countScale).round());
-  static final _lonDensity = math.max(2, (40 * _countScale).round());
-  static const _rBase = 0.6;
-  static const _rDepth = 1.7;
+  // Tuned between the original's 20px and 64px presets for a ~32px orb:
+  // fewer, larger dots than at 64 so it stays legible.
+  static const _rings = 7;
+  static const _lonDensity = 19;
+  static const _rBase = 0.78;
+  static const _rDepth = 2.21;
   static const _rsPow = 0.6;
   static const _rMin = 0.3;
 
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.shortestSide;
-    final t = _clock.elapsedMicroseconds / 1e6 * _presetSpeed * speed;
+    final t = motion.phase;
+    final swell = motion.swell;
 
-    // Silence keeps a gentle swell; speech pushes it to about twice the
-    // original's amplitude.
-    final amp = 0.105 * (0.5 + 1.5 * level.clamp(0.0, 1.0));
+    // Silence: a round sphere. Speech: rings pushed out to about twice the
+    // original's undulation.
+    final amp = 0.012 + 0.2 * swell;
+    final crestGain = 0.4 * math.min(1.0, swell * 2);
 
     final cx = s / 2;
     final cy = s / 2;
     final radius = (s / 2) * 0.874;
     final rs = math.pow(s / 300, _rsPow).toDouble();
 
-    // makeProj(yaw: t * 0.18, tilt: 0.38, scale: 1)
+    // spin follows the wave, so a silent orb also stops turning
     final yaw = t * 0.18;
     const tilt = 0.38;
     final sy = math.sin(yaw), cyw = math.cos(yaw);
@@ -114,8 +168,8 @@ class _WaveOrbPainter extends CustomPainter {
         final z2 = y * st + z1 * ct;
 
         final depth = (z2 / radius + 1) / 2;
-        final r = (_rBase + _rDepth * depth) * (1 + 0.4 * crest) * rs;
-        final white = 0.66 - 0.56 * depth - 0.1 * crest;
+        final r = (_rBase + _rDepth * depth) * (1 + crestGain * crest) * rs;
+        final white = 0.66 - 0.56 * depth - 0.1 * crest * swell;
         dots.add(_Dot(cx + x1, cy - y1, z2, math.max(_rMin, r), white));
       }
     }
@@ -132,8 +186,7 @@ class _WaveOrbPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_WaveOrbPainter old) =>
-      old.level != level || old.speed != speed;
+  bool shouldRepaint(_WaveOrbPainter old) => old.motion != motion;
 }
 
 class _Dot {

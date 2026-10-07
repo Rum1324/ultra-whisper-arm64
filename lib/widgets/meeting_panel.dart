@@ -45,7 +45,7 @@ class _Island extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(8, 34, 8, 8),
+      margin: const EdgeInsets.all(8),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
       decoration: const BoxDecoration(
         color: FocusIsland.ground,

@@ -36,6 +36,8 @@ dependencies:
   
   # UI and visual effects
   flutter_acrylic: ^1.1.4
+  # flutter_acrylic's macOS backend; used directly to make the window clear.
+  macos_window_utils: ^1.9.0
   macos_ui: ^2.2.0
   
   # System integration

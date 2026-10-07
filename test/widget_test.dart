@@ -69,45 +69,44 @@ Widget wrap(FakeAppService service) {
 }
 
 void main() {
-  testWidgets('shows the overlay with a mic button when idle', (tester) async {
+  testWidgets('shows nothing while idle', (tester) async {
     final service = FakeAppService();
 
     await tester.pumpWidget(wrap(service));
 
+    // Recording starts from the hotkey or the menu bar; the overlay only
+    // appears once there is something to show.
     expect(find.byType(FloatingOverlay), findsOneWidget);
-    expect(find.byIcon(Icons.mic), findsOneWidget);
-    expect(find.byIcon(Icons.stop), findsNothing);
-    // The listening orb stands in for the old waveform.
-    expect(find.byType(ThinkingOrb), findsOneWidget);
+    expect(find.byType(ThinkingOrb), findsNothing);
+    expect(find.text('Listening'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('tapping the mic button starts recording', (tester) async {
-    final service = FakeAppService();
+  testWidgets('shows the orb and the time while recording', (tester) async {
+    final service = FakeAppService(
+      const AppState(
+        recordingState: RecordingState.recording,
+        recordingDuration: Duration(seconds: 7),
+      ),
+    );
 
     await tester.pumpWidget(wrap(service));
-    await tester.tap(find.byIcon(Icons.mic));
-    await tester.pump();
 
-    expect(service.startRecordingCalls, 1);
-    expect(service.stopRecordingCalls, 0);
+    expect(find.byType(ThinkingOrb), findsOneWidget);
+    expect(find.text('Listening'), findsOneWidget);
+    expect(find.text('0:07'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('shows a stop button while recording and stops on tap',
-      (tester) async {
+  testWidgets('tapping the island stops recording', (tester) async {
     final service = FakeAppService(
       const AppState(recordingState: RecordingState.recording),
     );
 
     await tester.pumpWidget(wrap(service));
-
-    expect(find.byIcon(Icons.stop), findsOneWidget);
-    expect(find.byIcon(Icons.mic), findsNothing);
-
-    await tester.tap(find.byIcon(Icons.stop));
+    await tester.tap(find.text('Listening'));
     await tester.pump();
 
     expect(service.stopRecordingCalls, 1);
@@ -116,14 +115,35 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('says it is writing while the transcript is processed',
+      (tester) async {
+    final service = FakeAppService(
+      const AppState(recordingState: RecordingState.processing),
+    );
+
+    await tester.pumpWidget(wrap(service));
+    expect(find.text('Writing'), findsOneWidget);
+
+    // Not a stop button any more: there is nothing left to stop.
+    await tester.tap(find.text('Writing'));
+    await tester.pump();
+    expect(service.stopRecordingCalls, 0);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('hides the overlay contents when the overlay is not visible',
       (tester) async {
-    final service = FakeAppService(const AppState(isOverlayVisible: false));
+    final service = FakeAppService(
+      const AppState(
+        recordingState: RecordingState.recording,
+        isOverlayVisible: false,
+      ),
+    );
 
     await tester.pumpWidget(wrap(service));
 
     expect(find.byType(FloatingOverlay), findsOneWidget);
-    expect(find.byIcon(Icons.mic), findsNothing);
     expect(find.byType(ThinkingOrb), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
@@ -154,13 +174,12 @@ void main() {
     final service = FakeAppService();
 
     await tester.pumpWidget(wrap(service));
-    expect(find.byIcon(Icons.mic), findsOneWidget);
+    expect(find.text('Listening'), findsNothing);
 
     service.state = const AppState(recordingState: RecordingState.recording);
     await tester.pump();
 
-    expect(find.byIcon(Icons.stop), findsOneWidget);
-    expect(find.byIcon(Icons.mic), findsNothing);
+    expect(find.text('Listening'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
   });

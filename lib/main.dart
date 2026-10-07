@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
+import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'models/app_state.dart';
 import 'models/settings.dart';
 import 'services/app_service.dart';
 import 'services/audio_service.dart';
@@ -122,7 +124,7 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,
-      windowButtonVisibility: true,
+      windowButtonVisibility: false,
     );
 
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
@@ -135,30 +137,15 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
       await windowManager.show();
     });
 
-    // Enable acrylic effects using settings
-    await Window.setEffect(
-      effect: _getWindowEffect(settings.glassEffect),
-      color: Colors.black.withValues(alpha: settings.glassOpacity),
-    );
+    // No frame: the window is fully clear, so the only thing on screen is
+    // the island the overlay draws (and nothing at all while idle).
+    WindowManipulator.makeWindowFullyTransparent();
+    WindowManipulator.hideCloseButton();
+    WindowManipulator.hideMiniaturizeButton();
+    WindowManipulator.hideZoomButton();
+    await _syncMouseEvents();
 
     windowManager.addListener(this);
-  }
-
-  WindowEffect _getWindowEffect(String effectName) {
-    switch (effectName) {
-      case 'hudWindow':
-        return WindowEffect.acrylic;
-      case 'sidebar':
-        return WindowEffect.mica;
-      case 'menu':
-        return WindowEffect.acrylic;
-      case 'popover':
-        return WindowEffect.acrylic;
-      case 'titlebar':
-        return WindowEffect.titlebar;
-      default:
-        return WindowEffect.acrylic;
-    }
   }
 
   void _setupSignalHandlers() {
@@ -182,9 +169,21 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
   }
 
   void _handleAppServiceChanges() async {
-    // Settings window is now shown as a dialog overlay,
-    // so we don't need to reconfigure the main window
     if (!_isInitialized) return;
+    await _syncMouseEvents();
+  }
+
+  bool? _ignoringMouse;
+
+  /// While nothing is drawn, clicks pass through the clear window to whatever
+  /// is under it; the island and the meeting panel take them back.
+  Future<void> _syncMouseEvents() async {
+    final idle = _appService.state.recordingState == RecordingState.idle &&
+        _appService.pendingMeetingPrompt == null &&
+        !_appService.isMeetingActive;
+    if (idle == _ignoringMouse) return;
+    _ignoringMouse = idle;
+    await windowManager.setIgnoreMouseEvents(idle);
   }
 
   /// Handle method calls from other windows (e.g., settings window)

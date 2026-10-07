@@ -5,207 +5,151 @@ import '../services/app_service.dart';
 import '../theme/focus_theme.dart';
 import 'thinking_orb.dart';
 
-class FloatingOverlay extends StatefulWidget {
+/// The dictation overlay: one small black island, and only while there is
+/// something to say.
+///
+/// - Idle: nothing. Recording starts from the hotkey or the menu bar, which
+///   also holds Settings and Quit, so the overlay carries no controls of its
+///   own. The window lets clicks through meanwhile (see main.dart).
+/// - Recording: the orb following your voice, "Listening" and the elapsed
+///   time. The island is the stop button.
+/// - Writing: the orb settles to a slow swell.
+/// - Error: a red dot and the message.
+///
+/// The orb is unmounted while idle, and with it its ticker: the window is
+/// always on screen, so anything left animating would cost CPU all day.
+class FloatingOverlay extends StatelessWidget {
   const FloatingOverlay({super.key});
 
-  @override
-  State<FloatingOverlay> createState() => _FloatingOverlayState();
-}
-
-class _FloatingOverlayState extends State<FloatingOverlay>
-    with TickerProviderStateMixin {
-  late AnimationController _animationController;
-  late AppService _appService;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 50),
-      vsync: this,
-    );
-    _appService = context.read<AppService>();
-    _appService.addListener(_syncAnimation);
-    _syncAnimation();
-  }
-
-  /// Ticks only while there is audio to show. The overlay window is always on
-  /// screen, so a ticker left repeating renders a frame on every display
-  /// refresh for as long as the app runs — ~30% CPU while doing nothing.
-  void _syncAnimation() {
-    final state = _appService.state;
-    final active = state.isOverlayVisible &&
-        (state.recordingState == RecordingState.recording ||
-            state.recordingState == RecordingState.processing);
-    if (active && !_animationController.isAnimating) {
-      _animationController.repeat();
-    } else if (!active && _animationController.isAnimating) {
-      _animationController.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _appService.removeListener(_syncAnimation);
-    _animationController.dispose();
-    super.dispose();
-  }
+  static const _enter = Duration(milliseconds: 220);
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppService>(
       builder: (context, appService, child) {
         final state = appService.state;
+        final show = state.isOverlayVisible &&
+            state.recordingState != RecordingState.idle;
 
-        if (!state.isOverlayVisible) {
-          return const SizedBox.shrink();
-        }
-
-        // A Focus island: black in both appearances, because it floats over
-        // whatever app is in front.
-        return Container(
-          width: double.infinity,
-          height: double.infinity,
-          margin: const EdgeInsets.fromLTRB(8, 34, 8, 8),
-          padding: const EdgeInsets.only(left: 7),
-          decoration: const BoxDecoration(
-            color: FocusIsland.ground,
-            borderRadius: BorderRadius.all(FocusRadius.r26),
-          ),
-          child: Row(
-            children: [
-              // Left: the listening orb, swelling with your voice
-              _buildOrb(state),
-              const SizedBox(width: 8),
-
-              // Middle: what is happening, in a word
-              Expanded(child: _buildStatus(state)),
-
-              // Right: record button and menu
-              _buildRecordButton(context, appService),
-            ],
+        return Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            // Focus motion: a new object rises 8px and fades in over 0.22s.
+            child: AnimatedSwitcher(
+              duration: _enter,
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween(
+                    begin: const Offset(0, 0.2),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              ),
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.topCenter,
+                children: [...previous, if (current != null) current],
+              ),
+              child: show
+                  ? _Island(
+                      key: ValueKey(state.recordingState),
+                      state: state,
+                      onStop: appService.stopRecording,
+                    )
+                  : const SizedBox.shrink(key: ValueKey('hidden')),
+            ),
           ),
         );
       },
     );
   }
+}
 
-  Widget _buildStatus(AppState state) {
-    return Text(
-      _wordFor(state.recordingState),
-      overflow: TextOverflow.ellipsis,
-      style: FocusText.islandNow.copyWith(
-        fontSize: 13,
-        color: state.recordingState == RecordingState.idle
-            ? FocusIsland.ink2
-            : FocusIsland.ink,
-      ),
-    );
-  }
+class _Island extends StatelessWidget {
+  const _Island({super.key, required this.state, required this.onStop});
 
-  /// The orb is a glance aid; this word is the message.
-  String _wordFor(RecordingState state) => switch (state) {
-        RecordingState.idle => 'Ready',
-        RecordingState.recording => 'Listening',
-        RecordingState.processing => 'Writing',
-        RecordingState.error => 'Error',
-      };
+  final AppState state;
+  final VoidCallback onStop;
 
-  /// The orb moves only while the ticker runs (recording and processing).
-  /// Recording follows the microphone; processing settles to a slow, low
-  /// swell; idle and error hold a still frame.
-  Widget _buildOrb(AppState state) {
+  @override
+  Widget build(BuildContext context) {
     final recording = state.recordingState == RecordingState.recording;
-    final processing = state.recordingState == RecordingState.processing;
-    return ThinkingOrb(
-      repaint: _animationController,
-      level: recording ? (state.audioLevel / 100.0).clamp(0.0, 1.0) : 0,
-      speed: processing ? 0.5 : 1,
-      size: 44,
-    );
-  }
+    final error = state.recordingState == RecordingState.error;
 
-  Widget _buildRecordButton(BuildContext context, AppService appService) {
-    final state = appService.state;
-    final isRecording = state.recordingState == RecordingState.recording;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+    final island = Container(
+      height: 44,
+      constraints: const BoxConstraints(maxWidth: 340),
+      padding: EdgeInsets.fromLTRB(error ? 16 : 6, 0, 18, 0),
+      decoration: const BoxDecoration(
+        color: FocusIsland.ground,
+        borderRadius: BorderRadius.all(FocusRadius.pill),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Record/Stop. While recording, Stop is the one thing the island
-          // offers, so it inverts to the prominent white pill.
-          Semantics(
-            button: true,
-            label: isRecording ? 'Stop recording' : 'Start recording',
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: () {
-                  if (state.recordingState == RecordingState.idle) {
-                    appService.startRecording();
-                  } else if (state.recordingState == RecordingState.recording) {
-                    appService.stopRecording();
-                  }
-                },
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: isRecording ? FocusIsland.ink : FocusIsland.fill,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isRecording ? Icons.stop : Icons.mic,
-                    color: isRecording ? FocusIsland.ground : FocusIsland.ink,
-                    size: 18,
-                  ),
-                ),
+          if (error)
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: FocusIsland.levelRisk,
+                shape: BoxShape.circle,
               ),
+            )
+          else
+            ThinkingOrb(
+              level: recording ? state.audioLevel : 0,
+              mode: recording ? OrbMode.listening : OrbMode.writing,
+            ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              _label(),
+              overflow: TextOverflow.ellipsis,
+              style: FocusText.islandNow.copyWith(fontSize: 13),
             ),
           ),
-          // Settings menu
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.more_horiz,
-              color: FocusIsland.ink2,
-              size: 18,
+          if (recording) ...[
+            const SizedBox(width: 10),
+            Text(
+              _clock(state.recordingDuration),
+              style: FocusText.islandMeta.copyWith(fontSize: 13),
             ),
-            tooltip: 'More',
-            onSelected: (value) => _handleMenuAction(context, value, appService),
-            itemBuilder: (context) {
-              final c = FocusColors.of(context);
-              return [
-                const PopupMenuItem(
-                  value: 'settings',
-                  child: Text('Settings'),
-                ),
-                PopupMenuItem(
-                  value: 'quit',
-                  child: Text('Quit', style: TextStyle(color: c.bad)),
-                ),
-              ];
-            },
-          ),
+          ],
         ],
+      ),
+    );
+
+    if (!recording) return island;
+
+    // The whole island is the stop button: one target, nothing to aim for.
+    return Tooltip(
+      message: 'Click to stop',
+      child: Semantics(
+        button: true,
+        label: 'Stop recording',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(onTap: onStop, child: island),
+        ),
       ),
     );
   }
 
-  void _handleMenuAction(
-    BuildContext context,
-    String action,
-    AppService appService,
-  ) {
-    switch (action) {
-      case 'settings':
-        appService.openSettingsWindow();
-        break;
-      case 'quit':
-        // Add quit functionality
-        break;
-    }
-  }
+  String _label() => switch (state.recordingState) {
+        RecordingState.recording => 'Listening',
+        RecordingState.processing => 'Writing',
+        RecordingState.error => state.errorMessage ?? 'Something went wrong.',
+        RecordingState.idle => '',
+      };
 
+  /// Elapsed time as it is said: 0:07, 1:32.
+  static String _clock(Duration d) {
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${d.inMinutes}:$s';
+  }
 }
