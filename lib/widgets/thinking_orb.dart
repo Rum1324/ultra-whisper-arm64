@@ -3,6 +3,61 @@ import 'dart:math' as math;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import '../models/settings.dart';
+
+/// How hard the voice drives the orb, from input to drawing.
+///
+/// [low] is the orb's first tuning, which read as barely reacting next to
+/// the text; [high] exaggerates every stage on purpose. Both stay inside the
+/// 44px island: body + ring at full voice is at most 1.24 × the sphere
+/// radius, about 17px from centre, inside the 22px half-height.
+class OrbGains {
+  const OrbGains._({
+    required this.inputRange,
+    required this.inputCurve,
+    required this.attack,
+    required this.spin,
+    required this.bodyRest,
+    required this.body,
+    required this.ring,
+    required this.dot,
+    required this.ink,
+  });
+
+  /// Units over the noise floor (0.5 dB each) that count as full voice.
+  final double inputRange;
+
+  /// Exponent on loudness; below 1 lifts quiet speech.
+  final double inputCurve;
+
+  /// Rise time constant in seconds.
+  final double attack;
+
+  /// Radians per second of spin at full voice.
+  final double spin;
+
+  /// Sphere size at rest, and how much the voice right now swells it.
+  final double bodyRest, body;
+
+  /// How far a loud ring bulges, its dots grow, and its ink brightens.
+  final double ring, dot, ink;
+
+  static const low = OrbGains._(
+    inputRange: 36, inputCurve: 0.8, attack: 0.04, spin: 0.6,
+    bodyRest: 0.8, body: 0.08, ring: 0.2, dot: 0.5, ink: 0.16,
+  );
+
+  static const high = OrbGains._(
+    inputRange: 32, inputCurve: 0.75, attack: 0.025, spin: 1.6,
+    bodyRest: 0.72, body: 0.14, ring: 0.38, dot: 0.9, ink: 0.3,
+  );
+
+  static OrbGains of(OrbExpressiveness e) => switch (e) {
+        OrbExpressiveness.low => low,
+        OrbExpressiveness.high => high,
+      };
+}
+
 /// What the orb is doing.
 enum OrbMode {
   /// Following the microphone: still in silence, swelling with speech.
@@ -33,7 +88,10 @@ class ThinkingOrb extends StatefulWidget {
     this.mode = OrbMode.listening,
     this.size = 32,
     this.opacity = 1,
+    this.expressiveness = OrbExpressiveness.high,
   });
+
+  final OrbExpressiveness expressiveness;
 
   /// Microphone level as the app reports it: −60…−10 dBFS mapped to 0–100.
   final double level;
@@ -70,6 +128,7 @@ class _ThinkingOrbState extends State<ThinkingOrb>
   void _tick(Duration elapsed) {
     final dt = ((elapsed - _last).inMicroseconds / 1e6).clamp(0.0, 0.1);
     _last = elapsed;
+    _voice.gains = OrbGains.of(widget.expressiveness);
     if (widget.mode == OrbMode.writing) {
       _voice.idle(dt);
     } else {
@@ -106,6 +165,8 @@ class OrbVoice extends ChangeNotifier {
   /// visibly travels, short enough that the top ring answers at once.
   static const _step = 0.07;
 
+  OrbGains gains = OrbGains.high;
+
   /// Loudness now, 0–1, after attack/release smoothing.
   double now = 0;
 
@@ -135,12 +196,13 @@ class OrbVoice extends ChangeNotifier {
 
     // Loudness above the floor. One unit is 0.5 dB: speech sits roughly
     // 10–40 units over a quiet room. The 4-unit margin keeps breath and hum
-    // from registering at all.
-    final over = ((level - _floor - 4) / 36).clamp(0.0, 1.0);
-    final target = math.pow(over, 0.8).toDouble();
+    // from registering at all; the curve lifts ordinary speech so the orb
+    // answers a normal voice, not just a raised one.
+    final over = ((level - _floor - 4) / gains.inputRange).clamp(0.0, 1.0);
+    final target = math.pow(over, gains.inputCurve).toDouble();
 
-    // Rise in 40 ms, fall over 180 ms: a syllable is one gesture.
-    final tau = target > now ? 0.04 : 0.18;
+    // A fast rise, a fall over 180 ms: a syllable is one gesture.
+    final tau = target > now ? gains.attack : 0.18;
     now += (target - now) * (1 - math.exp(-dt / tau));
 
     _advance(dt);
@@ -163,7 +225,7 @@ class OrbVoice extends ChangeNotifier {
       }
     }
     history[0] = now;
-    spin += dt * (0.05 + 0.6 * now);
+    spin += dt * (0.05 + gains.spin * now);
     notifyListeners();
   }
 
@@ -201,8 +263,9 @@ class _OrbPainter extends CustomPainter {
     final radius = (s / 2) * 0.874;
     final rs = math.pow(s / 300, _rsPow).toDouble();
 
-    // The whole sphere breathes a little with the voice right now.
-    final body = 0.8 + 0.08 * voice.now;
+    final g = voice.gains;
+    // The whole sphere breathes with the voice right now.
+    final body = g.bodyRest + g.body * voice.now;
 
     final yaw = voice.spin;
     const tilt = 0.38;
@@ -217,7 +280,7 @@ class _OrbPainter extends CustomPainter {
       // Ring 0 is the bottom of the lattice; the newest moment enters at the
       // top and rolls down.
       final h = voice.ringLevel(rings - ri);
-      final rr = radius * (body + 0.2 * h);
+      final rr = radius * (body + g.ring * h);
       final lonCount = math.max(1, (cosLat.abs() * _lonDensity).round());
       for (var lj = 0; lj < lonCount; lj++) {
         final lon = (lj / lonCount) * 2 * math.pi;
@@ -231,9 +294,9 @@ class _OrbPainter extends CustomPainter {
         final z2 = y * st + z1 * ct;
 
         final depth = (z2 / radius + 1) / 2;
-        final r = (_rBase + _rDepth * depth) * (1 + 0.5 * h) * rs;
+        final r = (_rBase + _rDepth * depth) * (1 + g.dot * h) * rs;
         // a loud ring inks brighter, as the original's crest does
-        final white = 0.66 - 0.56 * depth - 0.16 * h;
+        final white = 0.66 - 0.56 * depth - g.ink * h;
         dots.add(_Dot(cx + x1, cy - y1, z2, math.max(_rMin, r), white));
       }
     }

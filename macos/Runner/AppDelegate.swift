@@ -131,6 +131,16 @@ class AppDelegate: FlutterAppDelegate {
     NSLog("AppDelegate: Status bar setup completed")
   }
 
+  /// Opening the app again while it runs — Spotlight, Finder, Launchpad,
+  /// Raycast, `open -a UltraWhisper` — opens Settings. This is the way in
+  /// that does not depend on the menu bar: on a notched MacBook a crowded
+  /// menu bar hides status items behind the notch, and with the default
+  /// "Menu bar only" there is no Dock icon either.
+  override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    statusBarEventChannel?.invokeMethod("openSettings", arguments: nil)
+    return false
+  }
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return true
   }

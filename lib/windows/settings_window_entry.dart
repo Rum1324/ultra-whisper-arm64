@@ -407,6 +407,35 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 _updateSettings(_settings.copyWith(showDictationOverlay: value)),
           ),
           FocusRow(
+            title: 'Orb expressiveness',
+            subtitle: 'How strongly the orb reacts to your voice.',
+            trailing: DropdownButtonHideUnderline(
+              child: DropdownButton<OrbExpressiveness>(
+                value: _settings.orbExpressiveness,
+                onChanged: (value) {
+                  if (value != null) {
+                    _updateSettings(
+                        _settings.copyWith(orbExpressiveness: value));
+                  }
+                },
+                dropdownColor: c.surface,
+                borderRadius: const BorderRadius.all(FocusRadius.r12),
+                style: FocusText.control.copyWith(color: c.ink),
+                iconEnabledColor: c.ink2,
+                items: const [
+                  DropdownMenuItem(
+                    value: OrbExpressiveness.low,
+                    child: Text('Low'),
+                  ),
+                  DropdownMenuItem(
+                    value: OrbExpressiveness.high,
+                    child: Text('High'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          FocusRow(
             title: 'App icon',
             subtitle: 'Where the app icon appears.',
             trailing: DropdownButtonHideUnderline(

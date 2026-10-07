@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:ultrawhisper/models/app_state.dart';
+import 'package:ultrawhisper/models/settings.dart';
 import 'package:ultrawhisper/services/app_service.dart';
 import 'package:ultrawhisper/services/meeting_detector.dart';
 import 'package:ultrawhisper/widgets/app_content.dart';
@@ -28,6 +29,10 @@ class FakeAppService extends ChangeNotifier implements AppService {
 
   @override
   AppState get state => _state;
+
+  /// The overlay reads the orb's expressiveness from here.
+  @override
+  Settings get settings => const Settings();
 
   /// AppContent chooses between the dictation overlay and the meeting panel on
   /// these two, so the fake has to answer them. Idle by default: these tests

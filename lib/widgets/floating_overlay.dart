@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import '../models/app_state.dart';
+import '../models/settings.dart';
 import '../services/app_service.dart';
 import '../theme/focus_theme.dart';
 import 'thinking_orb.dart';
@@ -98,6 +100,7 @@ class _FloatingOverlayState extends State<FloatingOverlay>
               offset: Offset(0, 8 * (1 - t)),
               child: _Island(
                 state: shown,
+                expressiveness: _appService.settings.orbExpressiveness,
                 opacity: t,
                 onStop: _appService.stopRecording,
               ),
@@ -112,11 +115,13 @@ class _FloatingOverlayState extends State<FloatingOverlay>
 class _Island extends StatelessWidget {
   const _Island({
     required this.state,
+    required this.expressiveness,
     required this.opacity,
     required this.onStop,
   });
 
   final AppState state;
+  final OrbExpressiveness expressiveness;
   final double opacity;
   final VoidCallback onStop;
 
@@ -151,6 +156,7 @@ class _Island extends StatelessWidget {
               level: recording ? state.audioLevel : 0,
               mode: recording ? OrbMode.listening : OrbMode.writing,
               opacity: opacity,
+              expressiveness: expressiveness,
             ),
           const SizedBox(width: 10),
           Flexible(
@@ -177,17 +183,26 @@ class _Island extends StatelessWidget {
       ),
     );
 
-    if (!recording) return island;
+    // Dragging the island moves the window, in every state. The gesture
+    // arena keeps this apart from the tap: a press that moves past the slop
+    // becomes a drag, one that does not stays a click.
+    final movable = GestureDetector(
+      onPanStart: (_) => windowManager.startDragging(),
+      onTap: recording ? onStop : null,
+      child: island,
+    );
+
+    if (!recording) return movable;
 
     // The whole island is the stop button: one target, nothing to aim for.
     return Tooltip(
-      message: 'Click to stop',
+      message: 'Click to stop · drag to move',
       child: Semantics(
         button: true,
         label: 'Stop recording',
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
-          child: GestureDetector(onTap: onStop, child: island),
+          child: movable,
         ),
       ),
     );

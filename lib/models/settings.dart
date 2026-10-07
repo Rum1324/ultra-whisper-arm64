@@ -8,6 +8,9 @@ enum DockVisibilityMode {
   both
 }
 
+/// How strongly the orb on the island answers your voice.
+enum OrbExpressiveness { low, high }
+
 /// A remembered audio output device and the ducking answer chosen for it.
 ///
 /// The Bluetooth heuristic exists only because a device had no identity to hang
@@ -168,6 +171,9 @@ class Settings {
   /// Show the island while dictating. Off: nothing appears on screen, and
   /// the menu bar icon is the only sign that recording is on.
   final bool showDictationOverlay;
+
+  /// How strongly the orb reacts to your voice. High by default.
+  final OrbExpressiveness orbExpressiveness;
   final bool bringToFrontDuringRecording;
   final DockVisibilityMode dockVisibilityMode;
 
@@ -204,6 +210,7 @@ class Settings {
     this.glassEffect = 'hudWindow',
     this.alwaysOnTop = false,
     this.showDictationOverlay = true,
+    this.orbExpressiveness = OrbExpressiveness.high,
     this.bringToFrontDuringRecording = false,
     this.dockVisibilityMode = DockVisibilityMode.menuBarOnly,
   });
@@ -238,6 +245,7 @@ class Settings {
     String? glassEffect,
     bool? alwaysOnTop,
     bool? showDictationOverlay,
+    OrbExpressiveness? orbExpressiveness,
     bool? bringToFrontDuringRecording,
     DockVisibilityMode? dockVisibilityMode,
   }) {
@@ -271,6 +279,7 @@ class Settings {
       glassEffect: glassEffect ?? this.glassEffect,
       alwaysOnTop: alwaysOnTop ?? this.alwaysOnTop,
       showDictationOverlay: showDictationOverlay ?? this.showDictationOverlay,
+      orbExpressiveness: orbExpressiveness ?? this.orbExpressiveness,
       bringToFrontDuringRecording: bringToFrontDuringRecording ?? this.bringToFrontDuringRecording,
       dockVisibilityMode: dockVisibilityMode ?? this.dockVisibilityMode,
     );

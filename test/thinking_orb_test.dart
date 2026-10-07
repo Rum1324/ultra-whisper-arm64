@@ -46,4 +46,26 @@ void main() {
     feed(loud, 75, 0.3);
     expect(loud.now, greaterThan(quiet.now + 0.3));
   });
+
+  test('high expressiveness answers the same voice harder than low', () {
+    final low = OrbVoice()..gains = OrbGains.low;
+    final high = OrbVoice()..gains = OrbGains.high;
+    feed(low, 24, 2);
+    feed(high, 24, 2);
+    // an ordinary, not raised, voice: about 10 dB over the room
+    feed(low, 44, 0.05);
+    feed(high, 44, 0.05);
+    expect(high.now, greaterThan(low.now));
+    expect(high.spin, greaterThan(low.spin));
+  });
+
+  test('low and high both keep a quiet room still', () {
+    for (final gains in [OrbGains.low, OrbGains.high]) {
+      final voice = OrbVoice()..gains = gains;
+      for (var i = 0; i < 120; i++) {
+        voice.hear(1 / 60, 24 + (i.isEven ? 1.5 : -1.5));
+      }
+      expect(voice.now, lessThan(0.02));
+    }
+  });
 }

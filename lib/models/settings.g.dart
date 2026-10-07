@@ -62,6 +62,12 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   glassEffect: json['glassEffect'] as String? ?? 'hudWindow',
   alwaysOnTop: json['alwaysOnTop'] as bool? ?? false,
   showDictationOverlay: json['showDictationOverlay'] as bool? ?? true,
+  orbExpressiveness:
+      $enumDecodeNullable(
+        _$OrbExpressivenessEnumMap,
+        json['orbExpressiveness'],
+      ) ??
+      OrbExpressiveness.high,
   bringToFrontDuringRecording:
       json['bringToFrontDuringRecording'] as bool? ?? false,
   dockVisibilityMode:
@@ -99,9 +105,15 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'glassEffect': instance.glassEffect,
   'alwaysOnTop': instance.alwaysOnTop,
   'showDictationOverlay': instance.showDictationOverlay,
+  'orbExpressiveness': _$OrbExpressivenessEnumMap[instance.orbExpressiveness]!,
   'bringToFrontDuringRecording': instance.bringToFrontDuringRecording,
   'dockVisibilityMode':
       _$DockVisibilityModeEnumMap[instance.dockVisibilityMode]!,
+};
+
+const _$OrbExpressivenessEnumMap = {
+  OrbExpressiveness.low: 'low',
+  OrbExpressiveness.high: 'high',
 };
 
 const _$DockVisibilityModeEnumMap = {

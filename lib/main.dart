@@ -138,8 +138,10 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
         visibleOnFullScreen: true,
       );
 
-      // Position window in top-right corner - hardcoded for now
-      await windowManager.setPosition(const Offset(1000, 40));
+      // Top centre of the screen under the cursor, just below the menu bar —
+      // on a notched Mac that is right under the notch, since the visible
+      // area starts where the menu bar ends. Drag the island to move it.
+      await windowManager.setAlignment(Alignment.topCenter);
 
       await windowManager.show();
     });

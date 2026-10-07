@@ -13,4 +13,18 @@ void main() {
     final off = const Settings().copyWith(showDictationOverlay: false);
     expect(Settings.fromJson(off.toJson()).showDictationOverlay, isFalse);
   });
+
+  test('the orb is highly expressive by default, including for settings '
+      'saved before the choice existed', () {
+    expect(const Settings().orbExpressiveness, OrbExpressiveness.high);
+    final old = const Settings().toJson()..remove('orbExpressiveness');
+    expect(Settings.fromJson(old).orbExpressiveness, OrbExpressiveness.high);
+  });
+
+  test('choosing low expressiveness survives a save and reload', () {
+    final low = const Settings()
+        .copyWith(orbExpressiveness: OrbExpressiveness.low);
+    expect(Settings.fromJson(low.toJson()).orbExpressiveness,
+        OrbExpressiveness.low);
+  });
 }
