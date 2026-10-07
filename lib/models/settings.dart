@@ -164,6 +164,10 @@ class Settings {
   final double glassOpacity;
   final String glassEffect; // 'hudWindow', 'sidebar', 'menu', 'popover', 'titlebar'
   final bool alwaysOnTop;
+
+  /// Show the island while dictating. Off: nothing appears on screen, and
+  /// the menu bar icon is the only sign that recording is on.
+  final bool showDictationOverlay;
   final bool bringToFrontDuringRecording;
   final DockVisibilityMode dockVisibilityMode;
 
@@ -199,6 +203,7 @@ class Settings {
     this.glassOpacity = 0.05,
     this.glassEffect = 'hudWindow',
     this.alwaysOnTop = false,
+    this.showDictationOverlay = true,
     this.bringToFrontDuringRecording = false,
     this.dockVisibilityMode = DockVisibilityMode.menuBarOnly,
   });
@@ -232,6 +237,7 @@ class Settings {
     double? glassOpacity,
     String? glassEffect,
     bool? alwaysOnTop,
+    bool? showDictationOverlay,
     bool? bringToFrontDuringRecording,
     DockVisibilityMode? dockVisibilityMode,
   }) {
@@ -264,6 +270,7 @@ class Settings {
       glassOpacity: glassOpacity ?? this.glassOpacity,
       glassEffect: glassEffect ?? this.glassEffect,
       alwaysOnTop: alwaysOnTop ?? this.alwaysOnTop,
+      showDictationOverlay: showDictationOverlay ?? this.showDictationOverlay,
       bringToFrontDuringRecording: bringToFrontDuringRecording ?? this.bringToFrontDuringRecording,
       dockVisibilityMode: dockVisibilityMode ?? this.dockVisibilityMode,
     );

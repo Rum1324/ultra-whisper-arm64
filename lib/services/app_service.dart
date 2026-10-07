@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:flutter_acrylic/flutter_acrylic.dart';
 
 import '../models/app_state.dart';
 import '../models/settings.dart';
@@ -156,6 +155,9 @@ class AppService extends ChangeNotifier {
       AppLogger.debug('Loading settings...');
       _settings = await _settingsService.loadSettings();
       AppLogger.success('Settings loaded successfully');
+      _updateState(
+        _state.copyWith(isOverlayVisible: _settings.showDictationOverlay),
+      );
 
       // Check audio permissions first
       AppLogger.debug('Checking audio permissions...');
@@ -739,6 +741,7 @@ class AppService extends ChangeNotifier {
       AppLogger.debug('Stopping audio service...');
       await _audioService.stopRecording();
       AppLogger.success('Audio recording stopped');
+      await _audioCueService.playRecordingStopCue();
 
       AppLogger.debug('Cancelling audio stream subscription...');
       _audioStreamSubscription?.cancel();
@@ -897,7 +900,8 @@ class AppService extends ChangeNotifier {
 
   Future<void> _sendWindowToBack() async {
     try {
-      await windowManager.setAlwaysOnTop(_settings.alwaysOnTop);
+      // Keep floating: the island must stay above the app being dictated into.
+      await windowManager.setAlwaysOnTop(true);
       AppLogger.debug('Window sent to back after recording');
     } catch (e) {
       AppLogger.error('Failed to send window to back', e);
@@ -1009,16 +1013,18 @@ class AppService extends ChangeNotifier {
     final oldSettings = _settings;
     _settings = newSettings;
     await _settingsService.saveSettings(newSettings);
+    if (newSettings.showDictationOverlay != _state.isOverlayVisible) {
+      _updateState(
+        _state.copyWith(isOverlayVisible: newSettings.showDictationOverlay),
+      );
+    }
 
     // Re-setup hotkeys if they changed
     await _hotkeyService.unregisterAllHotkeys();
     await _setupHotkeys();
 
     // Update window appearance if appearance settings changed
-    if (oldSettings.glassOpacity != newSettings.glassOpacity ||
-        oldSettings.glassEffect != newSettings.glassEffect ||
-        oldSettings.alwaysOnTop != newSettings.alwaysOnTop ||
-        oldSettings.overlayWidth != newSettings.overlayWidth ||
+    if (oldSettings.overlayWidth != newSettings.overlayWidth ||
         oldSettings.overlayHeight != newSettings.overlayHeight) {
       await _updateWindowAppearance(newSettings);
     }
@@ -1044,42 +1050,18 @@ class AppService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Only the size is applied here. The window is always clear and always
+  /// floats (see main.dart); re-applying the old glass effect or lowering the
+  /// window would bring the frame back, or hide the island behind the app
+  /// you are dictating into.
   Future<void> _updateWindowAppearance(Settings settings) async {
     try {
-      // Update window size
       await windowManager.setSize(
         Size(settings.overlayWidth, settings.overlayHeight),
       );
-
-      // Update always on top
-      await windowManager.setAlwaysOnTop(settings.alwaysOnTop);
-
-      // Update glass effect
-      await Window.setEffect(
-        effect: _getWindowEffect(settings.glassEffect),
-        color: Colors.black.withValues(alpha: settings.glassOpacity),
-      );
-
-      AppLogger.debug('Window appearance updated');
+      AppLogger.debug('Window size updated');
     } catch (e) {
-      AppLogger.error('Failed to update window appearance', e);
-    }
-  }
-
-  WindowEffect _getWindowEffect(String effectName) {
-    switch (effectName) {
-      case 'hudWindow':
-        return WindowEffect.acrylic;
-      case 'sidebar':
-        return WindowEffect.mica;
-      case 'menu':
-        return WindowEffect.acrylic;
-      case 'popover':
-        return WindowEffect.acrylic;
-      case 'titlebar':
-        return WindowEffect.titlebar;
-      default:
-        return WindowEffect.acrylic;
+      AppLogger.error('Failed to update window size', e);
     }
   }
 

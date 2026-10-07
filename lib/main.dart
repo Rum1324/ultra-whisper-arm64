@@ -129,7 +129,14 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
 
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
       // Keep normal window behavior - no frameless, no workspace visibility
-      await windowManager.setAlwaysOnTop(settings.alwaysOnTop);
+      // Always float, on every Space and over full-screen apps: the island
+      // has to be seen above the app you are dictating into. Harmless while
+      // idle, when the window draws nothing and lets clicks through.
+      await windowManager.setAlwaysOnTop(true);
+      await windowManager.setVisibleOnAllWorkspaces(
+        true,
+        visibleOnFullScreen: true,
+      );
 
       // Position window in top-right corner - hardcoded for now
       await windowManager.setPosition(const Offset(1000, 40));

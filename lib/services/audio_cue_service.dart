@@ -36,6 +36,18 @@ class AudioCueService {
     }
   }
 
+  /// Played once the microphone has closed, so it never lands in the
+  /// recording. The same voice as the start cue, falling and an octave lower:
+  /// the pair reads as on and off without looking.
+  Future<void> playRecordingStopCue() async {
+    if (!_isInitialized) return;
+    try {
+      await _audioPlayer.play(AssetSource('audio_assets/stop.wav'));
+    } catch (e) {
+      debugPrint('AudioCueService: Failed to play recording stop cue: $e');
+    }
+  }
+
   Future<void> dispose() async {
     if (_isInitialized) {
       try {

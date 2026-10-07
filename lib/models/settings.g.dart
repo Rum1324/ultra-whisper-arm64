@@ -61,6 +61,7 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   glassOpacity: (json['glassOpacity'] as num?)?.toDouble() ?? 0.05,
   glassEffect: json['glassEffect'] as String? ?? 'hudWindow',
   alwaysOnTop: json['alwaysOnTop'] as bool? ?? false,
+  showDictationOverlay: json['showDictationOverlay'] as bool? ?? true,
   bringToFrontDuringRecording:
       json['bringToFrontDuringRecording'] as bool? ?? false,
   dockVisibilityMode:
@@ -97,6 +98,7 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'glassOpacity': instance.glassOpacity,
   'glassEffect': instance.glassEffect,
   'alwaysOnTop': instance.alwaysOnTop,
+  'showDictationOverlay': instance.showDictationOverlay,
   'bringToFrontDuringRecording': instance.bringToFrontDuringRecording,
   'dockVisibilityMode':
       _$DockVisibilityModeEnumMap[instance.dockVisibilityMode]!,

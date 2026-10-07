@@ -398,19 +398,13 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       FocusGroup(
         children: [
           FocusSettingRow(
-            title: 'Always on top',
-            subtitle: 'Keep the overlay above other apps.',
-            value: _settings.alwaysOnTop,
+            title: 'Show the island while dictating',
+            subtitle: 'A small black pill with the orb and the time appears '
+                'at the top of the screen while you dictate. Off: nothing '
+                'appears, and the menu bar icon shows that recording is on.',
+            value: _settings.showDictationOverlay,
             onChanged: (value) =>
-                _updateSettings(_settings.copyWith(alwaysOnTop: value)),
-          ),
-          FocusSettingRow(
-            title: 'Bring to front while recording',
-            subtitle: 'Raise the overlay when recording starts.',
-            value: _settings.bringToFrontDuringRecording,
-            onChanged: (value) => _updateSettings(
-              _settings.copyWith(bringToFrontDuringRecording: value),
-            ),
+                _updateSettings(_settings.copyWith(showDictationOverlay: value)),
           ),
           FocusRow(
             title: 'App icon',
