@@ -32,7 +32,8 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   audioDevicePrefs: json['audioDevicePrefs'] == null
       ? const []
       : _audioDevicePrefsFromJson(json['audioDevicePrefs']),
-  modelStoragePath: json['modelStoragePath'] as String? ?? '',
+  speechModelId: json['speechModelId'] as String? ?? kDefaultSpeechModelId,
+  setupCompleted: json['setupCompleted'] as bool? ?? false,
   toggleRecordHotkey: json['toggleRecordHotkey'] as String? ?? '⌥⇧R',
   toggleRecordEnterHotkey: json['toggleRecordEnterHotkey'] as String? ?? '⌥⇧E',
   smartCapitalization: json['smartCapitalization'] as bool? ?? true,
@@ -85,7 +86,8 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'volumeDuckPercentage': instance.volumeDuckPercentage,
   'skipDuckWhenBluetooth': instance.skipDuckWhenBluetooth,
   'audioDevicePrefs': _audioDevicePrefsToJson(instance.audioDevicePrefs),
-  'modelStoragePath': instance.modelStoragePath,
+  'speechModelId': instance.speechModelId,
+  'setupCompleted': instance.setupCompleted,
   'toggleRecordHotkey': instance.toggleRecordHotkey,
   'toggleRecordEnterHotkey': instance.toggleRecordEnterHotkey,
   'smartCapitalization': instance.smartCapitalization,

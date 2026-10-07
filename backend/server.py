@@ -35,15 +35,28 @@ from summarize.llm import DEFAULT_HOST as OLLAMA_DEFAULT_HOST
 from summarize.pipeline import summarize_meeting
 
 
-def ollama_host() -> str:
+def ollama_host(requested: Optional[str] = None) -> str:
     """
     Where to reach Ollama.
 
-    Overridable because summarization is the one part of this app that is not
-    self-contained (see CLAUDE.md): the user may already run Ollama somewhere
-    other than the default port, and the tests point it at a stub.
+    The client names the host per request: it runs either the user's own Ollama
+    on the default port or the app's private copy on another one, and the
+    private copy can be installed while this backend is already running.
+    Otherwise the environment decides — the tests point it at a stub — and
+    last the default port.
     """
-    return os.environ.get('ULTRAWHISPER_OLLAMA_HOST') or OLLAMA_DEFAULT_HOST
+    return requested or os.environ.get('ULTRAWHISPER_OLLAMA_HOST') or OLLAMA_DEFAULT_HOST
+
+
+# The model an older client or a bare `python server.py` gets: the one that used
+# to be bundled. A release no longer ships it, so the app always passes --model.
+DEFAULT_MODEL_PATH = Path(__file__).parent / "whisper.cpp" / "models" / "ggml-large-v3-turbo.bin"
+
+
+def resolve_model_path(requested: Optional[str]) -> Path:
+    """The whisper model to load: --model, else ULTRAWHISPER_MODEL, else the default."""
+    chosen = requested or os.environ.get('ULTRAWHISPER_MODEL')
+    return Path(chosen).expanduser() if chosen else DEFAULT_MODEL_PATH
 
 # Configure logging
 logging.basicConfig(
@@ -81,7 +94,7 @@ class TranscriptionSession:
 class WhisperCppBackend:
     """Main backend service for whisper.cpp transcription"""
 
-    def __init__(self):
+    def __init__(self, model_path: Path):
         self.sessions: Dict[str, TranscriptionSession] = {}
         self.meetings: Dict[str, MeetingSession] = {}
 
@@ -92,9 +105,7 @@ class WhisperCppBackend:
         # changes, which the protocol requires.
         self._model_lock = threading.Lock()
 
-        # Model path
-        backend_dir = Path(__file__).parent
-        self.model_path = backend_dir / "whisper.cpp" / "models" / "ggml-large-v3-turbo.bin"
+        self.model_path = model_path
 
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model not found at {self.model_path}")
@@ -278,7 +289,11 @@ class WhisperCppBackend:
             # flag must not suddenly start waiting on Ollama.
             formatting = 'rules'
             if post.get('aiFormatting', False) and full_text:
-                formatted = dictation_formatter.format_dictation(full_text, custom_terms=custom_terms or None)
+                formatted = dictation_formatter.format_dictation(
+                    full_text,
+                    custom_terms=custom_terms or None,
+                    host=ollama_host(post.get('ollamaHost')),
+                )
                 full_text, formatting = formatted.text, formatted.source
                 logger.info(f"✨ AI formatting: {formatting}")
             segments = result['segments']
@@ -406,7 +421,7 @@ class WebSocketServer:
                 'serverVersion': '0.3.0',
                 'backend': 'whisper.cpp',
                 'gpu': 'Metal',
-                'models': ['large-v3-turbo', 'large-v3']
+                'models': [self.backend.model_path.stem.removeprefix('ggml-')]
             }
         }
 
@@ -424,11 +439,15 @@ class WebSocketServer:
         session = self.backend.create_session(session_id, data)
         session.is_active = True
 
-        if (data.get('post') or {}).get('aiFormatting'):
+        post = data.get('post') or {}
+        if post.get('aiFormatting'):
             # Load the formatting model while the user is still speaking, so the
             # first dictation after an idle spell doesn't pay the multi-second
             # load on top of the formatting pass. Fire-and-forget; never raises.
-            asyncio.get_event_loop().run_in_executor(None, dictation_formatter.warm)
+            host = ollama_host(post.get('ollamaHost'))
+            asyncio.get_event_loop().run_in_executor(
+                None, lambda: dictation_formatter.warm(host=host)
+            )
 
         logger.info(f"Started transcription session: {session_id}")
 
@@ -667,7 +686,7 @@ class WebSocketServer:
                 model=model,
                 meeting_type=data.get('meetingType') or meeting.meeting_type,
                 title=meeting.title,
-                host=ollama_host(),
+                host=ollama_host(data.get('ollamaHost')),
                 progress=report,
             ),
         )
@@ -744,6 +763,8 @@ async def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     parser.add_argument('--parent-pid', type=int, default=None,
                         help='Exit when this process exits (the app passes its own pid)')
+    parser.add_argument('--model', default=None,
+                        help='Path to a ggml whisper model (the app passes the one chosen in Settings)')
 
     args = parser.parse_args()
 
@@ -756,7 +777,7 @@ async def main():
         parent_watchdog.start(args.parent_pid)
 
     # Initialize backend
-    backend = WhisperCppBackend()
+    backend = WhisperCppBackend(resolve_model_path(args.model))
     logger.info("Backend initialized successfully")
 
     # Create WebSocket server
@@ -783,7 +804,6 @@ async def main():
         sys.stdout.flush()
 
         logger.info(f"WebSocket server started on {args.host}:{actual_port}")
-        logger.info(f"Using Metal GPU acceleration on Apple M3 Max")
 
         # Set up signal handlers
         def signal_handler(signum, frame):

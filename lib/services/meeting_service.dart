@@ -147,7 +147,7 @@ class MeetingService extends ChangeNotifier {
 
   /// Generate notes. Safe to call more than once, including with a different
   /// model — that is the intended way to retry after a weak note.
-  void summarize({required String model, String? meetingType}) {
+  void summarize({required String model, String? meetingType, String? ollamaHost}) {
     final id = _meetingId;
     if (id == null || _phase == MeetingPhase.recording) return;
 
@@ -160,6 +160,7 @@ class MeetingService extends ChangeNotifier {
       meetingId: id,
       model: model,
       meetingType: meetingType,
+      ollamaHost: ollamaHost,
     ).toJson());
 
     notifyListeners();

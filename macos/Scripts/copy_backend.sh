@@ -81,9 +81,11 @@ if [ -f "${PROJECT_DIR}/backend/whisper.cpp/build/bin/ggml-metal.metal" ]; then
     echo "Copied ggml-metal.metal"
 fi
 
-echo "Copying whisper.cpp models (turbo only)..."
-mkdir -p "${BUNDLE_RESOURCES}/backend/whisper.cpp/models"
-cp -f "${PROJECT_DIR}/backend/whisper.cpp/models/ggml-large-v3-turbo.bin" "${BUNDLE_RESOURCES}/backend/whisper.cpp/models/"
+# No whisper model is bundled. First-run setup downloads the one the user picks
+# into ~/Library/Application Support/UltraWhisper/models, which takes the
+# release from ~1.5 GB to ~100 MB. Remove a model an earlier build left behind,
+# or the bundle would quietly keep carrying it.
+rm -rf "${BUNDLE_RESOURCES}/backend/whisper.cpp/models"
 
 # Copy bundled Python runtime (NEW - self-contained distribution)
 echo "Copying bundled Python runtime..."
@@ -158,12 +160,6 @@ fi
 # Check Metal shader
 if [ ! -f "${BUNDLE_RESOURCES}/backend/whisper.cpp/build/bin/ggml-metal.metal" ]; then
     echo "  ⚠️  WARNING: ggml-metal.metal not found (GPU acceleration will not work)"
-    MISSING_LIBS=1
-fi
-
-# Check model
-if [ ! -f "${BUNDLE_RESOURCES}/backend/whisper.cpp/models/ggml-large-v3-turbo.bin" ]; then
-    echo "  ⚠️  WARNING: Whisper model not found"
     MISSING_LIBS=1
 fi
 

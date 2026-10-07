@@ -1,5 +1,7 @@
 import 'package:json_annotation/json_annotation.dart';
 
+import 'model_catalog.dart';
+
 part 'settings.g.dart';
 
 enum DockVisibilityMode {
@@ -99,8 +101,14 @@ class Settings {
   @JsonKey(toJson: _audioDevicePrefsToJson, fromJson: _audioDevicePrefsFromJson)
   final List<AudioDevicePref> audioDevicePrefs;
 
-  // Model settings
-  final String modelStoragePath;
+  /// The whisper model to load, an id from `kSpeechModels`. Downloaded into
+  /// `~/Library/Application Support/UltraWhisper/models` by setup or Settings;
+  /// a release no longer bundles one.
+  final String speechModelId;
+
+  /// Whether the first-run setup has been finished. Until it has, the app
+  /// opens setup instead of starting the backend.
+  final bool setupCompleted;
 
   // Hotkeys (stored as key combinations)
   final String toggleRecordHotkey;
@@ -185,7 +193,8 @@ class Settings {
     this.skipDuckWhenBluetooth = true,
     this.audioDevicePrefs = const [],
 
-    this.modelStoragePath = '',
+    this.speechModelId = kDefaultSpeechModelId,
+    this.setupCompleted = false,
 
     this.toggleRecordHotkey = '⌥⇧R',
     this.toggleRecordEnterHotkey = '⌥⇧E',
@@ -225,7 +234,8 @@ class Settings {
     double? volumeDuckPercentage,
     bool? skipDuckWhenBluetooth,
     List<AudioDevicePref>? audioDevicePrefs,
-    String? modelStoragePath,
+    String? speechModelId,
+    bool? setupCompleted,
     String? toggleRecordHotkey,
     String? toggleRecordEnterHotkey,
     bool? smartCapitalization,
@@ -256,7 +266,8 @@ class Settings {
       volumeDuckPercentage: volumeDuckPercentage ?? this.volumeDuckPercentage,
       skipDuckWhenBluetooth: skipDuckWhenBluetooth ?? this.skipDuckWhenBluetooth,
       audioDevicePrefs: audioDevicePrefs ?? this.audioDevicePrefs,
-      modelStoragePath: modelStoragePath ?? this.modelStoragePath,
+      speechModelId: speechModelId ?? this.speechModelId,
+      setupCompleted: setupCompleted ?? this.setupCompleted,
       toggleRecordHotkey: toggleRecordHotkey ?? this.toggleRecordHotkey,
       toggleRecordEnterHotkey: toggleRecordEnterHotkey ?? this.toggleRecordEnterHotkey,
       smartCapitalization: smartCapitalization ?? this.smartCapitalization,

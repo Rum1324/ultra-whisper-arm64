@@ -163,15 +163,12 @@ else
 fi
 echo ""
 
-# 5. Check Whisper Model
+# 5. Whisper model: downloaded at first run, never bundled
 echo -e "${BLUE}[5] Checking Whisper Model...${NC}"
-MODEL_PATH="${RESOURCES}/backend/whisper.cpp/models/ggml-large-v3-turbo.bin"
-if [ -f "$MODEL_PATH" ]; then
-    model_size=$(du -h "$MODEL_PATH" | awk '{print $1}')
-    echo -e "  ${GREEN}✓ Whisper model found (size: $model_size)${NC}"
+if ls "${RESOURCES}/backend/whisper.cpp/models/"*.bin >/dev/null 2>&1; then
+    echo -e "  ${YELLOW}⚠ A model is bundled — releases download it at first run instead${NC}"
 else
-    echo -e "  ${RED}✗ Whisper model NOT found${NC}"
-    ISSUES_FOUND=$((ISSUES_FOUND + 1))
+    echo -e "  ${GREEN}✓ No model bundled (first-run setup downloads it)${NC}"
 fi
 echo ""
 

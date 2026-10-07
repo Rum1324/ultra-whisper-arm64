@@ -14,6 +14,8 @@ import '../models/settings.dart';
 import '../models/websocket_messages.dart';
 import 'meeting_service.dart';
 import 'meeting_detector.dart';
+import 'model_manager.dart';
+import 'ollama_service.dart';
 import 'transcript_archive.dart';
 import '../utils/logger.dart';
 import '../utils/diagnostics.dart';
@@ -45,6 +47,31 @@ class AppService extends ChangeNotifier {
   // it out of the constructor avoids threading meeting capture through every
   // existing call site while the feature is still being built.
   final MicActivityService _micActivityService = MicActivityService();
+
+  /// The private-or-own Ollama behind AI formatting and meeting notes.
+  final OllamaService _ollama = OllamaService();
+
+  /// Whisper models, the private Ollama and its models: everything the setup
+  /// and settings windows can download. Lives here so a download outlives the
+  /// window that started it.
+  late final ModelManager modelManager = ModelManager(
+    ollama: _ollama,
+    fallbackModelDirs: _backendService.legacyModelDirs,
+  );
+
+  /// Hotkeys, permissions, meeting capture and the backend have been started.
+  /// False while first-run setup is open: there is no model to load yet.
+  bool _servicesStarted = false;
+
+  /// Set while the backend is deliberately restarted on a new model, so the
+  /// socket closing is not treated as a crash to reconnect from.
+  bool _restartingBackend = false;
+
+  /// A model change saved during a meeting. Restarting the backend then would
+  /// throw the meeting's transcript away, so it waits for the meeting to go.
+  bool _modelSwitchPending = false;
+
+  bool get servicesStarted => _servicesStarted;
 
   final _uuid = const Uuid();
 
@@ -141,6 +168,50 @@ class AppService extends ChangeNotifier {
 
   Future<void> initialize() async {
     AppLogger.info('Starting AppService initialization...');
+    try {
+      AppLogger.debug('Loading settings...');
+      _settings = await _settingsService.loadSettings();
+      AppLogger.success('Settings loaded successfully');
+      _updateState(
+        _state.copyWith(isOverlayVisible: _settings.showDictationOverlay),
+      );
+
+      // The menu bar comes first: during first-run setup it is the only way to
+      // reach Settings or Quit.
+      await _applyDockVisibility(_settings.dockVisibilityMode);
+      _setupStatusBarHandlers();
+
+      // Starts the private Ollama when it is installed. Not awaited: it takes a
+      // few seconds and nothing about dictation waits for it.
+      unawaited(modelManager.refreshOllama());
+
+      if (await _needsSetup()) {
+        AppLogger.info('No usable speech model or setup not finished; opening setup');
+        await openSetupWindow();
+        return;
+      }
+      await _startServices();
+    } catch (e, stackTrace) {
+      AppLogger.error('Failed to initialize AppService', e);
+      AppLogger.debug('Stack trace: $stackTrace');
+      _updateState(
+        _state.copyWith(
+          recordingState: RecordingState.error,
+          errorMessage: 'Initialization failed: $e',
+        ),
+      );
+    }
+  }
+
+  Future<bool> _needsSetup() async =>
+      !_settings.setupCompleted ||
+      await modelManager.resolveSpeechModel(_settings.speechModelId) == null;
+
+  /// Everything that needs permissions and a model: hotkeys, meeting capture,
+  /// the backend. Runs once, at launch or when setup finishes.
+  Future<void> _startServices() async {
+    if (_servicesStarted) return;
+    _servicesStarted = true;
 
     // Whether the opt-in tap self-test has been requested for this launch.
     //
@@ -151,14 +222,6 @@ class AppService extends ChangeNotifier {
     final selfTestRequested = Diagnostics.tapSelfTest;
 
     try {
-      // Load settings
-      AppLogger.debug('Loading settings...');
-      _settings = await _settingsService.loadSettings();
-      AppLogger.success('Settings loaded successfully');
-      _updateState(
-        _state.copyWith(isOverlayVisible: _settings.showDictationOverlay),
-      );
-
       // Check audio permissions first
       AppLogger.debug('Checking audio permissions...');
       final hasPermissions = await _audioService.hasPermissions();
@@ -291,20 +354,16 @@ class AppService extends ChangeNotifier {
 
       // Initialize backend
       AppLogger.debug('Initializing backend...');
-      await _backendService.initialize();
+      final modelPath = await modelManager.resolveSpeechModel(_settings.speechModelId);
+      if (modelPath == null) {
+        throw Exception('Speech model ${_settings.speechModelId} is not downloaded');
+      }
+      await _backendService.initialize(modelPath: modelPath);
       AppLogger.success('Backend initialized');
 
       AppLogger.debug('Connecting to backend WebSocket...');
       await _connectToBackend();
       AppLogger.success('Connected to backend');
-
-      // Apply initial Dock visibility setting
-      AppLogger.debug('Applying Dock visibility setting...');
-      await _applyDockVisibility(_settings.dockVisibilityMode);
-
-      // Set up status bar event handlers
-      AppLogger.debug('Setting up status bar event handlers...');
-      _setupStatusBarHandlers();
 
       // Update status bar menu with current volume duck state
       AppLogger.debug('Updating status bar volume duck state...');
@@ -315,7 +374,7 @@ class AppService extends ChangeNotifier {
 
       AppLogger.success('AppService initialization completed successfully!');
     } catch (e, stackTrace) {
-      AppLogger.error('Failed to initialize AppService', e);
+      AppLogger.error('Failed to start services', e);
       AppLogger.debug('Stack trace: $stackTrace');
       _updateState(
         _state.copyWith(
@@ -437,6 +496,8 @@ class AppService extends ChangeNotifier {
   }
 
   void _handleWebSocketDisconnection() {
+    // A deliberate restart onto a new model reconnects by itself.
+    if (_restartingBackend) return;
     AppLogger.websocket('WebSocket disconnected - attempting reconnection...');
     _updateState(
       _state.copyWith(
@@ -591,6 +652,7 @@ class AppService extends ChangeNotifier {
           disfluencyCleanup: _settings.disfluencyCleanup,
           customTerms: _settings.customTerms.isNotEmpty ? _settings.customTerms : null,
           aiFormatting: _settings.aiFormatting,
+          ollamaHost: _ollama.host,
         ),
       );
 
@@ -1019,9 +1081,24 @@ class AppService extends ChangeNotifier {
       );
     }
 
+    // Nothing below is running yet while first-run setup is open.
+    if (!_servicesStarted) {
+      notifyListeners();
+      return;
+    }
+
     // Re-setup hotkeys if they changed
     await _hotkeyService.unregisterAllHotkeys();
     await _setupHotkeys();
+
+    if (oldSettings.speechModelId != newSettings.speechModelId) {
+      if (isMeetingActive) {
+        AppLogger.info('Speech model change waits for the meeting to end');
+        _modelSwitchPending = true;
+      } else {
+        await _switchSpeechModel();
+      }
+    }
 
     // Update window appearance if appearance settings changed
     if (oldSettings.overlayWidth != newSettings.overlayWidth ||
@@ -1120,7 +1197,12 @@ class AppService extends ChangeNotifier {
 
     _statusBarService.onOpenSettings = () {
       AppLogger.info('Status bar: Open settings requested');
-      _settingsWindowService.openSettingsWindow();
+      // Until setup is done there is nothing for Settings to configure.
+      if (_servicesStarted) {
+        _settingsWindowService.openSettingsWindow();
+      } else {
+        openSetupWindow();
+      }
     };
 
     _statusBarService.onRestart = () async {
@@ -1395,7 +1477,10 @@ class AppService extends ChangeNotifier {
       AppLogger.warning('Nothing to summarize yet');
       return;
     }
-    _meetingService.summarize(model: model ?? _settings.meetingSummaryModel);
+    _meetingService.summarize(
+      model: model ?? _settings.meetingSummaryModel,
+      ollamaHost: _ollama.host,
+    );
   }
 
   /// Write the current meeting to the configured folder.
@@ -1443,6 +1528,11 @@ class AppService extends ChangeNotifier {
     await _statusBarService.setMeetingState(false);
     await _setMeetingWindow(false);
     notifyListeners();
+
+    if (_modelSwitchPending) {
+      _modelSwitchPending = false;
+      await _switchSpeechModel();
+    }
   }
 
   /// The first process that is both capturing the mic and playing audio.
@@ -1517,6 +1607,86 @@ class AppService extends ChangeNotifier {
     // Stop backend process
     await _backendService.stop();
     AppLogger.success('Backend process stopped');
+
+    // Only the private copy; the user's own Ollama is never touched.
+    await _ollama.stop();
+  }
+
+  // MARK: - Setup and models
+
+  Future<void> openSetupWindow() => _settingsWindowService.openSetupWindow();
+
+  /// Setup's last page: save its choices, close it, and start everything that
+  /// was waiting on a model.
+  Future<void> finishSetup(Settings chosen) async {
+    await updateSettings(chosen.copyWith(setupCompleted: true));
+    await _settingsWindowService.closeSetupWindow();
+    if (!_servicesStarted) {
+      await _startServices();
+    }
+  }
+
+  /// Load the model chosen in Settings. A restart rather than a hot swap: the
+  /// backend loads one whisper context at startup, and a few seconds of reload
+  /// is far simpler than replacing a context a meeting might be using.
+  Future<void> _switchSpeechModel() async {
+    final modelPath = await modelManager.resolveSpeechModel(_settings.speechModelId);
+    if (modelPath == null) {
+      AppLogger.warning('${_settings.speechModelId} is not downloaded; keeping the current model');
+      return;
+    }
+    AppLogger.info('Switching speech model to $modelPath');
+    _restartingBackend = true;
+    try {
+      await _webSocketChannel?.sink.close();
+      _webSocketChannel = null;
+      await _backendService.restart(modelPath: modelPath);
+      await _connectToBackend();
+      _updateState(_state.copyWith(recordingState: RecordingState.idle));
+    } catch (e) {
+      AppLogger.error('Failed to restart the backend on the new model', e);
+      _updateState(_state.copyWith(
+        recordingState: RecordingState.error,
+        errorMessage: 'Could not load the new speech model: $e',
+      ));
+    } finally {
+      _restartingBackend = false;
+    }
+  }
+
+  /// Microphone and Accessibility, for setup's permissions page. The
+  /// microphone is three-state so the page can offer "Allow" only while macOS
+  /// can still ask.
+  Future<Map<String, dynamic>> permissionsStatus() async {
+    String microphone;
+    try {
+      microphone = await _lifecycleChannel.invokeMethod<String>('microphoneStatus') ?? 'denied';
+    } catch (_) {
+      microphone = 'denied';
+    }
+    return {
+      'microphone': microphone,
+      'accessibility': await _pasteService.hasAccessibilityPermission(),
+    };
+  }
+
+  Future<bool> requestMicrophone() async {
+    try {
+      return await _lifecycleChannel.invokeMethod<bool>('requestMicrophone') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Shows macOS's own Accessibility prompt, which offers to open System
+  /// Settings with UltraWhisper already in the list.
+  Future<void> requestAccessibility() => _pasteService.requestAccessibilityPermission();
+
+  /// Delete a downloaded whisper model, unless it is the one in use.
+  Future<bool> deleteSpeechModel(String id) async {
+    if (id == _settings.speechModelId) return false;
+    await modelManager.deleteSpeechModel(id);
+    return true;
   }
 
   Future<void> openSettingsWindow() async {

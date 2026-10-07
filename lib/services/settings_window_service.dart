@@ -1,79 +1,94 @@
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-/// Service for managing the settings window
-class SettingsWindowService {
-  WindowController? _settingsWindowController;
-  bool _isSettingsWindowOpen = false;
-  int? _settingsWindowId;
+/// One secondary window: the settings window or the setup window.
+///
+/// Each is its own Flutter engine (desktop_multi_window), routed by the string
+/// passed to `createWindow` — see `main.dart`.
+class _ManagedWindow {
+  _ManagedWindow({required this.argument, required this.title, required this.size});
 
-  bool get isSettingsWindowOpen => _isSettingsWindowOpen;
-  int? get settingsWindowId => _settingsWindowId;
+  final String argument;
+  final String title;
+  final Size size;
 
-  /// Opens the settings window as a separate window
-  Future<void> openSettingsWindow() async {
-    // If window is already open, just focus it
-    if (_isSettingsWindowOpen && _settingsWindowController != null) {
+  WindowController? _controller;
+
+  bool get isOpen => _controller != null;
+
+  Future<void> open() async {
+    if (_controller != null) {
       try {
-        await _settingsWindowController!.show();
-        debugPrint('Focused existing settings window');
+        await _controller!.show();
+        await _activateApp();
         return;
       } catch (e) {
-        debugPrint('Failed to focus existing settings window: $e');
-        // Window might be closed, reset state and create new one
-        _markWindowClosed();
+        debugPrint('Failed to focus existing $argument window: $e');
+        _controller = null;
       }
     }
 
     try {
-      // Create a new window
-      final window = await DesktopMultiWindow.createWindow('settings');
-
-      // Configure the window
-      await window.setFrame(const Offset(100, 100) & const Size(700, 600));
-      await window.setTitle('Settings - UltraWhisper');
+      final window = await DesktopMultiWindow.createWindow(argument);
+      await window.setFrame(const Offset(100, 100) & size);
+      await window.setTitle(title);
       await window.center();
       await window.show();
-
-      _settingsWindowController = window;
-      _settingsWindowId = window.windowId;
-      _isSettingsWindowOpen = true;
-
-      debugPrint('Settings window opened successfully with ID: $_settingsWindowId');
+      _controller = window;
+      await _activateApp();
+      debugPrint('$argument window opened with ID: ${window.windowId}');
     } catch (e) {
-      debugPrint('Failed to open settings window: $e');
-      _markWindowClosed();
+      debugPrint('Failed to open $argument window: $e');
+      _controller = null;
     }
   }
 
-  /// Closes the settings window
-  Future<void> closeSettingsWindow() async {
-    if (_settingsWindowController != null) {
-      try {
-        await _settingsWindowController!.close();
-      } catch (e) {
-        debugPrint('Failed to close settings window: $e');
-      }
+  Future<void> close() async {
+    final controller = _controller;
+    _controller = null;
+    if (controller == null) return;
+    try {
+      await controller.close();
+    } catch (e) {
+      debugPrint('Failed to close $argument window: $e');
     }
-    _markWindowClosed();
   }
 
-  /// Called when the settings window closes (either programmatically or by user)
-  void onSettingsWindowClosed() {
-    debugPrint('Settings window closed notification received');
-    _markWindowClosed();
+  /// The app is a menu bar accessory, so a new window opens behind whatever
+  /// the user is in unless the app is activated. On first launch that would
+  /// leave a friend looking at nothing.
+  static Future<void> _activateApp() async {
+    try {
+      await const MethodChannel('com.glassywhisper.app_lifecycle').invokeMethod('activateApp');
+    } catch (e) {
+      debugPrint('Could not activate the app: $e');
+    }
   }
+}
 
-  /// Internal method to mark window as closed
-  void _markWindowClosed() {
-    _settingsWindowController = null;
-    _settingsWindowId = null;
-    _isSettingsWindowOpen = false;
-    debugPrint('Settings window state reset');
-  }
+/// Opens and closes the settings and setup windows.
+class SettingsWindowService {
+  final _settings = _ManagedWindow(
+    argument: 'settings',
+    title: 'Settings - UltraWhisper',
+    size: const Size(700, 600),
+  );
 
-  /// Disposes the service
-  void dispose() {
-    _markWindowClosed();
-  }
+  final _setup = _ManagedWindow(
+    argument: 'setup',
+    title: 'Welcome to UltraWhisper',
+    size: const Size(760, 640),
+  );
+
+  bool get isSettingsWindowOpen => _settings.isOpen;
+  bool get isSetupWindowOpen => _setup.isOpen;
+
+  Future<void> openSettingsWindow() => _settings.open();
+  Future<void> closeSettingsWindow() => _settings.close();
+
+  Future<void> openSetupWindow() => _setup.open();
+  Future<void> closeSetupWindow() => _setup.close();
+
+  void dispose() {}
 }

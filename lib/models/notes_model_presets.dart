@@ -20,8 +20,6 @@ class NotesModelPreset {
   final String tag;
   final double approxGigabytes;
   final String note;
-
-  String get pullCommand => 'ollama pull $tag';
 }
 
 const List<NotesModelPreset> kNotesModelPresets = [

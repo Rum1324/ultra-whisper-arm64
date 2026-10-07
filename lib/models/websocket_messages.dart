@@ -63,12 +63,17 @@ class PostProcessingOptions {
   /// Clean up the transcript with a local LLM via Ollama after the rule pass.
   final bool aiFormatting;
 
+  /// Which Ollama to use: the user's own or the app's private copy. Null lets
+  /// the backend use its default.
+  final String? ollamaHost;
+
   const PostProcessingOptions({
     this.smartCaps = true,
     this.punctuation = true,
     this.disfluencyCleanup = true,
     this.customTerms,
     this.aiFormatting = false,
+    this.ollamaHost,
   });
 
   factory PostProcessingOptions.fromJson(Map<String, dynamic> json) => _$PostProcessingOptionsFromJson(json);
@@ -266,10 +271,14 @@ class SummarizeCommand {
   /// Optional override of the start_meeting value.
   final String? meetingType;
 
+  /// Which Ollama to use; see [PostProcessingOptions.ollamaHost].
+  final String? ollamaHost;
+
   const SummarizeCommand({
     required this.meetingId,
     required this.model,
     this.meetingType,
+    this.ollamaHost,
   });
 
   factory SummarizeCommand.fromJson(Map<String, dynamic> json) => _$SummarizeCommandFromJson(json);

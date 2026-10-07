@@ -11,10 +11,14 @@ class BackendService {
   static const int _backendPort = 8082;  // Fixed port for v3
   static File? _lockFile;
   static File? _pidFile;
-  
-  Future<void> initialize() async {
+
+  /// The whisper model the backend loads, chosen in setup or Settings.
+  String? _modelPath;
+
+  Future<void> initialize({required String modelPath}) async {
+    _modelPath = modelPath;
     try {
-      AppLogger.info('Initializing backend service...');
+      AppLogger.info('Initializing backend service with $modelPath...');
 
       // Clean up any orphaned processes from previous runs
       await _cleanupOrphanedProcesses();
@@ -161,6 +165,7 @@ class BackendService {
           // an Apple Event, a crash, or a force-quit all skip Dart cleanup,
           // and macOS does not take children down with their parent.
           '--parent-pid', '$pid',
+          '--model', _modelPath!,
         ],
         mode: ProcessStartMode.normal,
         environment: environment,
@@ -290,6 +295,21 @@ class BackendService {
 
   Future<String> _getBackendPath() async =>
       path.join(await _resolveBackendRoot(), 'server.py');
+
+  /// Where a whisper model may already sit outside Application Support: the
+  /// checkout of a debug build, and the bundle of a release from before models
+  /// were downloaded. Lets a developer skip the 1.6 GB download.
+  Future<List<String>> legacyModelDirs() async {
+    final dirs = <String>[];
+    try {
+      dirs.add(path.join(await _resolveBackendRoot(), 'whisper.cpp', 'models'));
+    } catch (_) {
+      // No backend at all; nothing to look in.
+    }
+    final bundled = path.join(_bundledBackendRoot, 'whisper.cpp', 'models');
+    if (!dirs.contains(bundled)) dirs.add(bundled);
+    return dirs;
+  }
 
   Future<String> _getPythonPath() async {
     // The bundled interpreter carries websockets and numpy, so preferring it in
@@ -446,9 +466,14 @@ class BackendService {
   
   bool get isRunning => _backendProcess != null && _port != null;
   
-  Future<void> restart() async {
+  /// Restart, optionally on a different model. Loading a model takes a few
+  /// seconds, which is cheaper and far less fragile than swapping one inside a
+  /// running whisper context that meetings may be using.
+  Future<void> restart({String? modelPath}) async {
     AppLogger.info('Restarting backend...');
+    if (modelPath != null) _modelPath = modelPath;
     await stop();
+    await _waitForPortRelease(_backendPort);
     await _startBackendProcess();
   }
   

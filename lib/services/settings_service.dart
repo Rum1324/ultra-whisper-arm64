@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/settings.dart';
 
 class SettingsService {
@@ -20,11 +19,7 @@ class SettingsService {
       debugPrint('Error loading settings: $e');
     }
     
-    // Return default settings with proper model storage path
-    final appSupportDir = await getApplicationSupportDirectory();
-    final modelPath = '${appSupportDir.path}/UltraWhisper/models';
-    
-    return Settings(modelStoragePath: modelPath);
+    return const Settings();
   }
   
   Future<void> saveSettings(Settings settings) async {
@@ -48,10 +43,5 @@ class SettingsService {
       debugPrint('Error resetting settings: $e');
       throw Exception('Failed to reset settings: $e');
     }
-  }
-  
-  Future<String> getDefaultModelPath() async {
-    final appSupportDir = await getApplicationSupportDirectory();
-    return '${appSupportDir.path}/UltraWhisper/models';
   }
 }

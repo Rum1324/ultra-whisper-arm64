@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
@@ -22,6 +23,7 @@ import 'services/status_bar_service.dart';
 import 'theme/focus_theme.dart';
 import 'widgets/app_content.dart';
 import 'windows/settings_window_entry.dart';
+import 'windows/setup_window_entry.dart';
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +36,10 @@ void main(List<String> args) async {
     // Route to appropriate window based on argument
     if (argument == 'settings') {
       settingsWindowMain();
+      return;
+    }
+    if (argument == 'setup') {
+      setupWindowMain();
       return;
     }
   }
@@ -107,6 +113,10 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
       statusBarService: statusBarService,
     );
 
+    // Before initialize: on first launch it opens the setup window, which
+    // talks to this engine straight away.
+    DesktopMultiWindow.setMethodHandler(_handleMethodCall);
+
     // Initialize audio cue service
     await audioCueService.initialize();
 
@@ -121,9 +131,6 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
 
     // Listen for settings window state changes
     _appService.addListener(_handleAppServiceChanges);
-
-    // Set up message handler for multi-window communication
-    DesktopMultiWindow.setMethodHandler(_handleMethodCall);
 
     setState(() {
       _isInitialized = true;
@@ -247,6 +254,66 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
           debugPrint('Folder picker failed: $e');
           return null;
         }
+
+      case 'setup_window_closed':
+        await _appService.settingsWindowService.closeSetupWindow();
+        return true;
+
+      case 'open_setup':
+        await _appService.settingsWindowService.closeSettingsWindow();
+        await _appService.openSetupWindow();
+        return true;
+
+      case 'finish_setup':
+        final chosen = Settings.fromJson(Map<String, dynamic>.from(call.arguments as Map));
+        await _appService.finishSetup(chosen);
+        return true;
+
+      case 'permissions_status':
+        return _appService.permissionsStatus();
+
+      case 'request_microphone':
+        return _appService.requestMicrophone();
+
+      case 'request_accessibility':
+        await _appService.requestAccessibility();
+        return true;
+
+      // Models. Downloads run here, in the main engine, so they outlive the
+      // window that asked for them; the windows poll models_status.
+      case 'models_status':
+        final args = call.arguments is Map ? call.arguments as Map : const {};
+        if (args['refreshOllama'] == true) {
+          await _appService.modelManager.refreshOllama();
+        }
+        return _appService.modelManager.statusJson();
+
+      case 'download_speech_model':
+        unawaited(_appService.modelManager.downloadSpeechModel(call.arguments as String));
+        return true;
+
+      case 'delete_speech_model':
+        return _appService.deleteSpeechModel(call.arguments as String);
+
+      case 'cancel_task':
+        _appService.modelManager.cancel(call.arguments as String);
+        return true;
+
+      case 'install_ollama':
+        unawaited(_appService.modelManager.installOllamaRuntime());
+        return true;
+
+      case 'pull_ollama_model':
+        final args = Map<String, dynamic>.from(call.arguments as Map);
+        unawaited(_appService.modelManager.pullOllamaModel(
+          args['tag'] as String,
+          label: args['label'] as String?,
+        ));
+        return true;
+
+      case 'delete_ollama_model':
+        await _appService.modelManager.deleteOllamaModel(call.arguments as String);
+        return true;
 
       case 'save_settings':
         // Settings window wants to save new settings

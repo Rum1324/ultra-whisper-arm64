@@ -2,11 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import '../models/model_catalog.dart';
 import '../models/notes_model_presets.dart';
 import '../models/settings.dart';
 import '../theme/focus_theme.dart';
 import '../widgets/focus_controls.dart';
 import '../widgets/hotkey_recorder.dart';
+import '../widgets/model_widgets.dart';
 
 /// Entry point for the settings window
 /// This is called when a new settings window is created
@@ -233,11 +235,32 @@ class SettingsWindowBody extends StatefulWidget {
 
 class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   late Settings _settings;
+  final ModelsClient _models = ModelsClient();
+
+  /// The model the backend is running now. `widget.settings` follows every
+  /// unsaved edit, so it cannot answer that once a new model is selected.
+  late final String _runningSpeechModelId;
 
   @override
   void initState() {
     super.initState();
     _settings = widget.settings;
+    _runningSpeechModelId = widget.settings.speechModelId;
+    _models
+      ..addListener(_onModelsChanged)
+      ..start();
+  }
+
+  void _onModelsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _models
+      ..removeListener(_onModelsChanged)
+      ..dispose();
+    super.dispose();
   }
 
   @override
@@ -341,17 +364,70 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   }
 
   List<Widget> _modelSection() {
-    final c = FocusColors.of(context);
+    final status = _models.status;
+    final changed = _settings.speechModelId != _runningSpeechModelId;
     return [
-      const FocusLabel('Transcription model'),
+      const FocusLabel('Speech model'),
+      FocusCaption(
+        changed
+            ? 'Saving switches models. Dictation pauses for a few seconds while '
+                'the new one loads.'
+            : 'Download a model, then select it. Models are stored in '
+                '~/Library/Application Support/UltraWhisper.',
+      ),
       FocusGroup(
         children: [
-          FocusRow(
-            title: 'Model storage',
-            subtitle: _settings.modelStoragePath,
-            trailing: Icon(Icons.folder_open, size: 18, color: c.ink3),
-          ),
+          for (final model in kSpeechModels)
+            SpeechModelTile(
+              model: model,
+              status: status,
+              client: _models,
+              selected: _settings.speechModelId == model.id,
+              // The model running now stays deletable only once Save has
+              // moved the backend off it.
+              allowDelete: model.id != _runningSpeechModelId,
+              onSelect: (id) {
+                // Only a model on disk can be loaded.
+                if (status?.speechInstalled(id) ?? false) {
+                  _updateSettings(_settings.copyWith(speechModelId: id));
+                }
+              },
+            ),
         ],
+      ),
+      _groupGap,
+      const FocusLabel('Local AI (optional)'),
+      const FocusCaption(
+        'AI formatting and meeting notes run on Ollama, on this Mac. Nothing '
+        'else in the app needs it.',
+      ),
+      FocusGroup(
+        children: [
+          OllamaRuntimeRow(status: status, client: _models),
+          OllamaModelRow(
+            model: kFormattingModel,
+            title: 'AI formatting model',
+            status: status,
+            client: _models,
+          ),
+          for (final notes in kNotesModelChoices)
+            if (notes.tag == _settings.meetingSummaryModel)
+              OllamaModelRow(
+                model: notes,
+                title: 'Meeting notes model',
+                status: status,
+                client: _models,
+              ),
+        ],
+      ),
+      _groupGap,
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: const Text('Run setup again'),
+          onPressed: () => DesktopMultiWindow.invokeMethod(0, 'open_setup'),
+        ),
       ),
     ];
   }
@@ -501,8 +577,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       _groupGap,
       const FocusLabel('Notes model (Ollama)'),
       const FocusCaption(
-        'Notes need Ollama running locally with this model pulled. '
-        'Transcription is unaffected if it is missing.',
+        'Download the chosen model under Local AI above. Transcription is '
+        'unaffected if it is missing.',
       ),
       _buildSummaryModelField(),
     ];
@@ -536,7 +612,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             title: 'AI formatting (local)',
             subtitle: 'Polishes each dictation with gemma4:e4b via Ollama — '
                 'fillers, natural punctuation, numbers, Japanese 、。. Adds '
-                'about a second. Needs Ollama with `ollama pull gemma4:e4b`; '
+                'about a second. Download the model under Local AI above; '
                 'without it the options above are used as before.',
             value: _settings.aiFormatting,
             onChanged: (value) =>
@@ -702,24 +778,10 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (active == null)
-                Text(
-                  'Custom tag',
-                  style: FocusText.caption.copyWith(color: c.ink2),
-                )
-              else
-                SelectableText.rich(
-                  TextSpan(
-                    children: [
-                      const TextSpan(text: 'Pull it once with '),
-                      TextSpan(
-                        text: active.pullCommand,
-                        style: FocusText.mono.copyWith(color: c.ink),
-                      ),
-                    ],
-                  ),
-                  style: FocusText.caption.copyWith(color: c.ink2),
-                ),
+              Text(
+                active == null ? 'Custom tag — pull it with `ollama pull`' : 'Ollama tag',
+                style: FocusText.caption.copyWith(color: c.ink2),
+              ),
               const SizedBox(height: 8),
               _buildSummaryModelTagField(),
             ],

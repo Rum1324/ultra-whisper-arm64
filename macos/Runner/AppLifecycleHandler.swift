@@ -1,3 +1,4 @@
+import AVFoundation
 import Cocoa
 import FlutterMacOS
 
@@ -12,6 +13,27 @@ class AppLifecycleHandler {
                 return
             }
             setDockVisibility(mode: mode, result: result)
+
+        case "activateApp":
+            // A menu bar accessory opens new windows behind the frontmost app.
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+                result(nil)
+            }
+
+        case "microphoneStatus":
+            // Three states, not a bool: setup offers "Allow" only when macOS can
+            // still ask, and sends a denied user to System Settings instead.
+            switch AVCaptureDevice.authorizationStatus(for: .audio) {
+            case .authorized: result("granted")
+            case .notDetermined: result("notDetermined")
+            default: result("denied")
+            }
+
+        case "requestMicrophone":
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                DispatchQueue.main.async { result(granted) }
+            }
 
         default:
             result(FlutterMethodNotImplemented)

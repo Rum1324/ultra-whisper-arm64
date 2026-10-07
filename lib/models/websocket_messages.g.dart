@@ -64,6 +64,7 @@ PostProcessingOptions _$PostProcessingOptionsFromJson(
       ?.map((e) => e as String)
       .toList(),
   aiFormatting: json['aiFormatting'] as bool? ?? false,
+  ollamaHost: json['ollamaHost'] as String?,
 );
 
 Map<String, dynamic> _$PostProcessingOptionsToJson(
@@ -74,6 +75,7 @@ Map<String, dynamic> _$PostProcessingOptionsToJson(
   'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
   'aiFormatting': instance.aiFormatting,
+  'ollamaHost': instance.ollamaHost,
 };
 
 EndSessionCommand _$EndSessionCommandFromJson(Map<String, dynamic> json) =>
@@ -214,6 +216,7 @@ SummarizeCommand _$SummarizeCommandFromJson(Map<String, dynamic> json) =>
       meetingId: json['meetingId'] as String,
       model: json['model'] as String,
       meetingType: json['meetingType'] as String?,
+      ollamaHost: json['ollamaHost'] as String?,
     );
 
 Map<String, dynamic> _$SummarizeCommandToJson(SummarizeCommand instance) =>
@@ -221,6 +224,7 @@ Map<String, dynamic> _$SummarizeCommandToJson(SummarizeCommand instance) =>
       'meetingId': instance.meetingId,
       'model': instance.model,
       'meetingType': instance.meetingType,
+      'ollamaHost': instance.ollamaHost,
     };
 
 CancelMeetingCommand _$CancelMeetingCommandFromJson(
