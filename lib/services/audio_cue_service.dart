@@ -29,7 +29,7 @@ class AudioCueService {
 
     try {
       debugPrint('AudioCueService: Playing recording start cue');
-      await _audioPlayer.play(AssetSource('audio_assets/SFX.mp3'));
+      await _audioPlayer.play(AssetSource('audio_assets/start.wav'));
       debugPrint('AudioCueService: Recording start cue played successfully');
     } catch (e) {
       debugPrint('AudioCueService: Failed to play recording start cue: $e');
