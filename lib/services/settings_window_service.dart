@@ -18,6 +18,13 @@ class _ManagedWindow {
   bool get isOpen => _controller != null;
 
   Future<void> open() async {
+    // Closing with the red button (or ⌘W) never reaches Dart: the plugin drops
+    // the window natively, and `show()` on a dropped id is a silent no-op. So
+    // a remembered controller can be dead, and reusing it opens nothing.
+    if (_controller != null &&
+        !(await DesktopMultiWindow.getAllSubWindowIds()).contains(_controller!.windowId)) {
+      _controller = null;
+    }
     if (_controller != null) {
       try {
         await _controller!.show();
