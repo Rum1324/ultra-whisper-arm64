@@ -38,6 +38,9 @@ class _ManagedWindow {
 
     try {
       final window = await DesktopMultiWindow.createWindow(argument);
+      // Fixed size. Live-resizing a desktop_multi_window window (its own
+      // Flutter engine) could freeze the app; the content scrolls instead.
+      await window.resizable(false);
       await window.setFrame(const Offset(100, 100) & size);
       await window.setTitle(title);
       await window.center();
@@ -79,13 +82,15 @@ class SettingsWindowService {
   final _settings = _ManagedWindow(
     argument: 'settings',
     title: 'Settings - UltraWhisper',
-    size: const Size(700, 600),
+    // Tall enough to show a whole section at once, short enough for a 13"
+    // MacBook Air's ~900 pt of usable height.
+    size: const Size(720, 820),
   );
 
   final _setup = _ManagedWindow(
     argument: 'setup',
     title: 'Welcome to UltraWhisper',
-    size: const Size(760, 640),
+    size: const Size(760, 720),
   );
 
   bool get isSettingsWindowOpen => _settings.isOpen;

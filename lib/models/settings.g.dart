@@ -36,9 +36,6 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
   setupCompleted: json['setupCompleted'] as bool? ?? false,
   toggleRecordHotkey: json['toggleRecordHotkey'] as String? ?? '⌥⇧R',
   toggleRecordEnterHotkey: json['toggleRecordEnterHotkey'] as String? ?? '⌥⇧E',
-  smartCapitalization: json['smartCapitalization'] as bool? ?? true,
-  punctuation: json['punctuation'] as bool? ?? true,
-  disfluencyCleanup: json['disfluencyCleanup'] as bool? ?? true,
   customTerms:
       (json['customTerms'] as List<dynamic>?)
           ?.map((e) => e as String)
@@ -64,6 +61,7 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
       'hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_XL',
   meetingSaveDirectory: json['meetingSaveDirectory'] as String? ?? '',
   saveMeetingTranscripts: json['saveMeetingTranscripts'] as bool? ?? true,
+  meetingNotes: json['meetingNotes'] as bool? ?? true,
   overlayWidth: (json['overlayWidth'] as num?)?.toDouble() ?? 360.0,
   overlayHeight: (json['overlayHeight'] as num?)?.toDouble() ?? 100.0,
   glassOpacity: (json['glassOpacity'] as num?)?.toDouble() ?? 0.05,
@@ -97,9 +95,6 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'setupCompleted': instance.setupCompleted,
   'toggleRecordHotkey': instance.toggleRecordHotkey,
   'toggleRecordEnterHotkey': instance.toggleRecordEnterHotkey,
-  'smartCapitalization': instance.smartCapitalization,
-  'punctuation': instance.punctuation,
-  'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
   'aiFormatting': instance.aiFormatting,
   'aiFormattingEngine':
@@ -109,6 +104,7 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'meetingNeverDetectBundleIds': instance.meetingNeverDetectBundleIds,
   'meetingSaveDirectory': instance.meetingSaveDirectory,
   'saveMeetingTranscripts': instance.saveMeetingTranscripts,
+  'meetingNotes': instance.meetingNotes,
   'meetingSummaryModel': instance.meetingSummaryModel,
   'overlayWidth': instance.overlayWidth,
   'overlayHeight': instance.overlayHeight,

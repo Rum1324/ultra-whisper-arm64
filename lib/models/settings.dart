@@ -118,10 +118,9 @@ class Settings {
   final String toggleRecordHotkey;
   final String toggleRecordEnterHotkey; // Toggle record, then paste + press Enter
 
-  // Advanced settings
-  final bool smartCapitalization;
-  final bool punctuation;
-  final bool disfluencyCleanup;
+  // Smart capitalization, punctuation and filler cleanup used to be switches
+  // here. Nobody turned them off and AI formatting covers the same ground, so
+  // since 1.0.1 the rule pass always runs (the wire defaults are on).
   final List<String> customTerms; // Custom dictionary for domain-specific terms
 
   /// Clean up each dictation with a small local LLM (gemma4:e4b via Ollama):
@@ -163,6 +162,10 @@ class Settings {
 
   /// Write the transcript and note to [meetingSaveDirectory] automatically.
   final bool saveMeetingTranscripts;
+
+  /// Write notes with the local model when a meeting ends (beta). Off: the
+  /// transcript is still made and saved, nothing is summarised.
+  final bool meetingNotes;
 
   /// Ollama tag used for meeting notes. Summarization is the one part of the
   /// app that is not self-contained, and it degrades to a plain transcript when
@@ -208,9 +211,6 @@ class Settings {
     this.toggleRecordHotkey = '⌥⇧R',
     this.toggleRecordEnterHotkey = '⌥⇧E',
 
-    this.smartCapitalization = true,
-    this.punctuation = true,
-    this.disfluencyCleanup = true,
     this.customTerms = const [],
     this.aiFormatting = true,
     this.aiFormattingEngine = AiFormattingEngine.local,
@@ -221,6 +221,7 @@ class Settings {
     this.meetingSummaryModel = 'hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_XL',
     this.meetingSaveDirectory = '',
     this.saveMeetingTranscripts = true,
+    this.meetingNotes = true,
 
     this.overlayWidth = 360.0,
     this.overlayHeight = 100.0,
@@ -248,9 +249,6 @@ class Settings {
     bool? setupCompleted,
     String? toggleRecordHotkey,
     String? toggleRecordEnterHotkey,
-    bool? smartCapitalization,
-    bool? punctuation,
-    bool? disfluencyCleanup,
     List<String>? customTerms,
     bool? aiFormatting,
     AiFormattingEngine? aiFormattingEngine,
@@ -260,6 +258,7 @@ class Settings {
     String? meetingSummaryModel,
     String? meetingSaveDirectory,
     bool? saveMeetingTranscripts,
+    bool? meetingNotes,
     double? overlayWidth,
     double? overlayHeight,
     double? glassOpacity,
@@ -281,9 +280,6 @@ class Settings {
       setupCompleted: setupCompleted ?? this.setupCompleted,
       toggleRecordHotkey: toggleRecordHotkey ?? this.toggleRecordHotkey,
       toggleRecordEnterHotkey: toggleRecordEnterHotkey ?? this.toggleRecordEnterHotkey,
-      smartCapitalization: smartCapitalization ?? this.smartCapitalization,
-      punctuation: punctuation ?? this.punctuation,
-      disfluencyCleanup: disfluencyCleanup ?? this.disfluencyCleanup,
       customTerms: customTerms ?? this.customTerms,
       aiFormatting: aiFormatting ?? this.aiFormatting,
       aiFormattingEngine: aiFormattingEngine ?? this.aiFormattingEngine,
@@ -296,6 +292,7 @@ class Settings {
       meetingSaveDirectory: meetingSaveDirectory ?? this.meetingSaveDirectory,
       saveMeetingTranscripts:
           saveMeetingTranscripts ?? this.saveMeetingTranscripts,
+      meetingNotes: meetingNotes ?? this.meetingNotes,
       overlayWidth: overlayWidth ?? this.overlayWidth,
       overlayHeight: overlayHeight ?? this.overlayHeight,
       glassOpacity: glassOpacity ?? this.glassOpacity,

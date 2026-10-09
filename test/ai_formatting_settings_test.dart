@@ -53,4 +53,27 @@ void main() {
     expect(options.toJson()['aiFormattingEngine'], 'claude');
     expect(options.toJson()['anthropicApiKey'], 'sk-ant-test');
   });
+
+  test('settings from before 1.0.1 still load; the old rule switches are ignored', () {
+    final legacy = const Settings().toJson()
+      ..['smartCapitalization'] = false
+      ..['punctuation'] = false
+      ..['disfluencyCleanup'] = false;
+    expect(() => Settings.fromJson(legacy), returnsNormally);
+  });
+
+  test('the rule pass is always on the wire', () {
+    final post = const PostProcessingOptions().toJson();
+    expect(post['smartCaps'], isTrue);
+    expect(post['punctuation'], isTrue);
+    expect(post['disfluencyCleanup'], isTrue);
+  });
+
+  test('meeting notes are on by default and can be switched off', () {
+    expect(const Settings().meetingNotes, isTrue);
+    final legacy = const Settings().toJson()..remove('meetingNotes');
+    expect(Settings.fromJson(legacy).meetingNotes, isTrue);
+    final off = const Settings().copyWith(meetingNotes: false);
+    expect(Settings.fromJson(off.toJson()).meetingNotes, isFalse);
+  });
 }

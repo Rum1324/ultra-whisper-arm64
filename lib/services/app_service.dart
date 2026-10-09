@@ -659,9 +659,6 @@ class AppService extends ChangeNotifier {
         enablePartial: true,
         language: 'auto',
         post: PostProcessingOptions(
-          smartCaps: _settings.smartCapitalization,
-          punctuation: _settings.punctuation,
-          disfluencyCleanup: _settings.disfluencyCleanup,
           customTerms: _settings.customTerms.isNotEmpty ? _settings.customTerms : null,
           aiFormatting: _settings.aiFormatting,
           ollamaHost: _ollama.host,
@@ -1455,7 +1452,8 @@ class AppService extends ChangeNotifier {
     await _audioService.stopRecording();
     await _micActivityService.stopSystemCapture();
 
-    _autoSummarizePending = summarize;
+    // Meeting notes are beta and can be switched off; the transcript is kept either way.
+    _autoSummarizePending = summarize && _settings.meetingNotes;
     _meetingService.end();
 
     await _statusBarService.setMeetingState(false);

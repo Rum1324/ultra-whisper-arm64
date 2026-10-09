@@ -615,15 +615,25 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             ),
           ),
           _buildSaveLocationField(),
+          FocusSettingRow(
+            title: 'Meeting notes',
+            subtitle: 'When a meeting ends, a local model writes a summary '
+                'with decisions and action items. Off: you still get the '
+                'transcript.',
+            value: _settings.meetingNotes,
+            onChanged: (value) =>
+                _updateSettings(_settings.copyWith(meetingNotes: value)),
+          ),
         ],
       ),
-      _groupGap,
-      const FocusLabel('Notes model (Ollama)'),
-      const FocusCaption(
-        'Download the chosen model under Local AI above. Transcription is '
-        'unaffected if it is missing.',
-      ),
-      _buildSummaryModelField(),
+      if (_settings.meetingNotes) ...[
+        _groupGap,
+        const FocusCaption(
+          'Notes model (Ollama). Download it under Local AI above; the '
+          'transcript is unaffected if it is missing.',
+        ),
+        _buildSummaryModelField(),
+      ],
     ];
   }
 
@@ -708,33 +718,14 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
 
   List<Widget> _advancedSection() {
     return [
-      const FocusLabel('Post-processing'),
+      const FocusLabel('Formatting'),
       FocusGroup(
         children: [
           FocusSettingRow(
-            title: 'Smart capitalization',
-            value: _settings.smartCapitalization,
-            onChanged: (value) =>
-                _updateSettings(_settings.copyWith(smartCapitalization: value)),
-          ),
-          FocusSettingRow(
-            title: 'Punctuation',
-            value: _settings.punctuation,
-            onChanged: (value) =>
-                _updateSettings(_settings.copyWith(punctuation: value)),
-          ),
-          FocusSettingRow(
-            title: 'Disfluency cleanup',
-            subtitle: 'Remove filler words like "um" and "uh".',
-            value: _settings.disfluencyCleanup,
-            onChanged: (value) =>
-                _updateSettings(_settings.copyWith(disfluencyCleanup: value)),
-          ),
-          FocusSettingRow(
             title: 'AI formatting',
             subtitle: 'Polishes each dictation — fillers, natural punctuation, '
-                'numbers, Japanese 、。. Whenever the engine below is not '
-                'available, the options above are used as before.',
+                'numbers, Japanese 、。. Capitals, punctuation and "um"s are '
+                'always tidied by simple rules, with or without it.',
             value: _settings.aiFormatting,
             onChanged: (value) =>
                 _updateSettings(_settings.copyWith(aiFormatting: value)),
