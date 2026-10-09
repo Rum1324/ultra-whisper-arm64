@@ -3,10 +3,12 @@
 Optional LLM clean-up of a dictation transcript: fillers, natural punctuation,
 numbers as digits, Japanese 、。 — without answering, translating or rewording.
 
-Runs a small local model through Ollama. Like meeting notes it is an
-enhancement, never a dependency: every failure — no Ollama, model not pulled,
-timeout, or an output that fails the sanity check — returns the rule-based text
-the caller already has, so the worst case is exactly the pre-LLM behaviour.
+Runs a small local model through Ollama, or — when the user picks it and gives
+their own key — Claude Haiku (claude_client.py), with the same prompt and the
+same sanity check. Like meeting notes it is an enhancement, never a dependency:
+every failure — no Ollama, model not pulled, no key, offline, timeout, or an
+output that fails the sanity check — returns the rule-based text the caller
+already has, so the worst case is exactly the pre-LLM behaviour.
 
 Model and prompt were chosen by measurement on 2026-09-25 (22 realistic EN/JA
 dictations run through whisper): gemma4:e4b with this rules-plus-examples prompt
@@ -20,6 +22,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+import claude_client
 from postprocess import _is_japanese, apply_post_processing
 from summarize.contracts import Unavailable
 from summarize.llm import DEFAULT_HOST, chat_text, preload
@@ -27,6 +30,11 @@ from summarize.llm import DEFAULT_HOST, chat_text, preload
 _LOG = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "gemma4:e4b"
+
+# Where the formatting runs: Ollama on this Mac, or Claude Haiku with the
+# user's own API key (claude_client.py). Settings → Advanced picks it.
+ENGINE_LOCAL = "local"
+ENGINE_CLAUDE = "claude"
 
 # Held resident between dictations. A reload costs ~2 s with the weights in the
 # page cache and several more without, which is worse than the whole formatting
@@ -155,22 +163,30 @@ def format_dictation(
     custom_terms: list[str] | None = None,
     model: str = DEFAULT_MODEL,
     host: str = DEFAULT_HOST,
+    engine: str = ENGINE_LOCAL,
+    api_key: str | None = None,
 ) -> FormatResult:
     """
     Clean up `text` (already rule-processed) with the LLM, or return it unchanged.
 
-    Blocking; call from a worker thread. Never raises.
+    `engine` is "local" (Ollama, `model` on `host`) or "claude" (Haiku on the
+    Claude API with the user's `api_key`). Both get the same prompt and the
+    same sanity check. Blocking; call from a worker thread. Never raises.
     """
     if not text.strip():
         return FormatResult(text, "empty input")
-    reply = chat_text(
-        model=model,
-        messages=build_messages(text, custom_terms),
-        host=host,
-        timeout=timeout_for(text),
-        keep_alive=KEEP_ALIVE,
-    )
-    if isinstance(reply, Unavailable):
+    messages = build_messages(text, custom_terms)
+    if engine == ENGINE_CLAUDE:
+        reply = claude_client.chat_text(messages=messages, api_key=api_key, timeout=timeout_for(text))
+    else:
+        reply = chat_text(
+            model=model,
+            messages=messages,
+            host=host,
+            timeout=timeout_for(text),
+            keep_alive=KEEP_ALIVE,
+        )
+    if isinstance(reply, (Unavailable, claude_client.ClaudeUnavailable)):
         _LOG.info("AI formatting unavailable (%s): %s", reply.reason, reply.detail)
         return FormatResult(text, reply.reason)
     output = _TAG_RE.sub("", reply).strip()
@@ -183,6 +199,14 @@ def format_dictation(
     return FormatResult(apply_post_processing(output, disfluency_cleanup=False), "llm")
 
 
-def warm(*, model: str = DEFAULT_MODEL, host: str = DEFAULT_HOST) -> bool:
-    """Load the model while the user is still speaking. Never raises."""
+def warm(
+    *,
+    model: str = DEFAULT_MODEL,
+    host: str = DEFAULT_HOST,
+    engine: str = ENGINE_LOCAL,
+    api_key: str | None = None,
+) -> bool:
+    """Load the model (or the Claude SDK) while the user is still speaking. Never raises."""
+    if engine == ENGINE_CLAUDE:
+        return claude_client.warm(api_key)
     return preload(model=model, host=host, keep_alive=KEEP_ALIVE) is True

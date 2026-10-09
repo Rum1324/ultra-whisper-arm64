@@ -65,6 +65,8 @@ PostProcessingOptions _$PostProcessingOptionsFromJson(
       .toList(),
   aiFormatting: json['aiFormatting'] as bool? ?? false,
   ollamaHost: json['ollamaHost'] as String?,
+  aiFormattingEngine: json['aiFormattingEngine'] as String?,
+  anthropicApiKey: json['anthropicApiKey'] as String?,
 );
 
 Map<String, dynamic> _$PostProcessingOptionsToJson(
@@ -76,6 +78,8 @@ Map<String, dynamic> _$PostProcessingOptionsToJson(
   'customTerms': instance.customTerms,
   'aiFormatting': instance.aiFormatting,
   'ollamaHost': instance.ollamaHost,
+  'aiFormattingEngine': instance.aiFormattingEngine,
+  'anthropicApiKey': instance.anthropicApiKey,
 };
 
 EndSessionCommand _$EndSessionCommandFromJson(Map<String, dynamic> json) =>

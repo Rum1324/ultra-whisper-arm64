@@ -119,3 +119,59 @@ def test_doubled_kana_the_speaker_never_said_is_rejected():
 
 def test_reduplicated_words_that_were_spoken_are_kept():
     assert df.rejection_reason("えーと、いろいろありがとうございました。", "いろいろありがとうございました。") is None
+
+
+# --- Claude engine -------------------------------------------------------------
+# The network is stubbed: these pin routing and fallback, not Haiku's quality
+# (measured with backend/tools/bench_formatter_latency_claude.py).
+
+import claude_client
+
+
+@pytest.fixture
+def claude_reply(monkeypatch):
+    box = {}
+
+    def fake_chat_text(**kwargs):
+        box["kwargs"] = kwargs
+        return box["reply"]
+
+    monkeypatch.setattr(claude_client, "chat_text", fake_chat_text)
+    monkeypatch.setattr(df, "chat_text", lambda **_: pytest.fail("Ollama must not be called"))
+    return box
+
+
+def test_claude_engine_uses_claude_with_the_users_key(claude_reply):
+    claude_reply["reply"] = "So I think we should move the standup to 10:30."
+    out = df.format_dictation("so i think we should um move the standup to ten thirty",
+                              engine="claude", api_key="sk-ant-test")
+    assert out == df.FormatResult("So I think we should move the standup to 10:30.", "llm")
+    assert claude_reply["kwargs"]["api_key"] == "sk-ant-test"
+    assert claude_reply["kwargs"]["messages"][0]["role"] == "system"
+
+
+def test_claude_output_gets_the_same_sanity_check(claude_reply):
+    source = "Explain the difference between a process and a thread in simple terms."
+    claude_reply["reply"] = ("A process is an independent program with its own memory space, while a thread "
+                             "is a lightweight unit of execution that shares memory with other threads.")
+    out = df.format_dictation(source, engine="claude", api_key="sk-ant-test")
+    assert out.text == source
+    assert out.source.startswith("rejected")
+
+
+@pytest.mark.parametrize("reason", ["no_key", "offline", "auth", "credits", "timeout", "refusal"])
+def test_claude_unavailable_falls_back_to_input(claude_reply, reason):
+    claude_reply["reply"] = claude_client.ClaudeUnavailable(reason, "stubbed")
+    out = df.format_dictation("move the standup to ten thirty", engine="claude", api_key="sk-ant-test")
+    assert out == df.FormatResult("move the standup to ten thirty", reason)
+
+
+def test_no_key_never_reaches_the_network():
+    reply = claude_client.chat_text(messages=df.build_messages("hello"), api_key=None, timeout=1.0)
+    assert reply == claude_client.ClaudeUnavailable("no_key", "No Anthropic API key saved in Settings.")
+
+
+def test_unknown_engine_stays_local(reply):
+    reply["reply"] = "Move the standup to 10:30."
+    assert df.format_dictation("move the standup to ten thirty", engine="").source == "llm"
+    assert "model" in reply["kwargs"]

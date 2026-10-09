@@ -13,6 +13,10 @@ enum DockVisibilityMode {
 /// How strongly the orb on the island answers your voice.
 enum OrbExpressiveness { low, high }
 
+/// Where AI formatting runs: gemma4:e4b in Ollama on this Mac, or Claude Haiku
+/// with the user's own API key (the key lives in the Keychain, not here).
+enum AiFormattingEngine { local, claude }
+
 /// A remembered audio output device and the ducking answer chosen for it.
 ///
 /// The Bluetooth heuristic exists only because a device had no identity to hang
@@ -128,6 +132,11 @@ class Settings {
   /// above is pasted unchanged. Costs ~1 s per dictation when it runs.
   final bool aiFormatting;
 
+  /// Where [aiFormatting] runs. Local by default: Claude sends each dictation
+  /// to Anthropic, so it is only ever the user's explicit choice.
+  @JsonKey(unknownEnumValue: AiFormattingEngine.local)
+  final AiFormattingEngine aiFormattingEngine;
+
   /// Leave the transcript on the clipboard after pasting it.
   ///
   /// The paste itself always goes through the clipboard, so the only question
@@ -204,6 +213,7 @@ class Settings {
     this.disfluencyCleanup = true,
     this.customTerms = const [],
     this.aiFormatting = true,
+    this.aiFormattingEngine = AiFormattingEngine.local,
     this.keepTranscriptOnClipboard = true,
 
     this.meetingAutoDetect = true,
@@ -243,6 +253,7 @@ class Settings {
     bool? disfluencyCleanup,
     List<String>? customTerms,
     bool? aiFormatting,
+    AiFormattingEngine? aiFormattingEngine,
     bool? keepTranscriptOnClipboard,
     bool? meetingAutoDetect,
     List<String>? meetingNeverDetectBundleIds,
@@ -275,6 +286,7 @@ class Settings {
       disfluencyCleanup: disfluencyCleanup ?? this.disfluencyCleanup,
       customTerms: customTerms ?? this.customTerms,
       aiFormatting: aiFormatting ?? this.aiFormatting,
+      aiFormattingEngine: aiFormattingEngine ?? this.aiFormattingEngine,
       keepTranscriptOnClipboard:
           keepTranscriptOnClipboard ?? this.keepTranscriptOnClipboard,
       meetingAutoDetect: meetingAutoDetect ?? this.meetingAutoDetect,

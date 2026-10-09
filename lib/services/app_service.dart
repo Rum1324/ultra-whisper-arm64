@@ -12,6 +12,7 @@ import 'package:window_manager/window_manager.dart';
 import '../models/app_state.dart';
 import '../models/settings.dart';
 import '../models/websocket_messages.dart';
+import 'anthropic_key_store.dart';
 import 'meeting_service.dart';
 import 'meeting_detector.dart';
 import 'model_manager.dart';
@@ -50,6 +51,9 @@ class AppService extends ChangeNotifier {
 
   /// The private-or-own Ollama behind AI formatting and meeting notes.
   final OllamaService _ollama = OllamaService();
+
+  /// The user's own Anthropic key, for AI formatting on Claude Haiku.
+  final AnthropicKeyStore anthropicKeys = AnthropicKeyStore();
 
   /// Whisper models, the private Ollama and its models: everything the setup
   /// and settings windows can download. Lives here so a download outlives the
@@ -642,6 +646,13 @@ class AppService extends ChangeNotifier {
       _currentSessionId = _uuid.v4();
       AppLogger.debug('Generated session ID: $_currentSessionId');
 
+      // Claude formatting needs the user's key for this session; it is read
+      // from the Keychain (cached after the first read) and sent only to the
+      // local backend. No key, or local formatting: nothing is sent.
+      final useClaude = _settings.aiFormatting &&
+          _settings.aiFormattingEngine == AiFormattingEngine.claude;
+      final anthropicKey = useClaude ? await anthropicKeys.read() : null;
+
       // Send start session command to backend — language is always auto-detected
       final startCommand = StartSessionCommand(
         sessionId: _currentSessionId!,
@@ -654,6 +665,8 @@ class AppService extends ChangeNotifier {
           customTerms: _settings.customTerms.isNotEmpty ? _settings.customTerms : null,
           aiFormatting: _settings.aiFormatting,
           ollamaHost: _ollama.host,
+          aiFormattingEngine: _settings.aiFormattingEngine.name,
+          anthropicApiKey: anthropicKey,
         ),
       );
 

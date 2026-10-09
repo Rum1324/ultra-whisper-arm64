@@ -27,6 +27,9 @@ cp -f "${PROJECT_DIR}/backend/postprocess.py" "${BUNDLE_RESOURCES}/backend/"
 echo "Copying backend/dictation_formatter.py..."
 cp -f "${PROJECT_DIR}/backend/dictation_formatter.py" "${BUNDLE_RESOURCES}/backend/"
 
+echo "Copying backend/claude_client.py..."
+cp -f "${PROJECT_DIR}/backend/claude_client.py" "${BUNDLE_RESOURCES}/backend/"
+
 echo "Copying backend/requirements.txt..."
 cp -f "${PROJECT_DIR}/backend/requirements.txt" "${BUNDLE_RESOURCES}/backend/"
 

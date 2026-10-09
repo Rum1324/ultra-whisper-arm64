@@ -67,6 +67,14 @@ class PostProcessingOptions {
   /// the backend use its default.
   final String? ollamaHost;
 
+  /// "local" (Ollama) or "claude" (Haiku on the Claude API). Null is local.
+  final String? aiFormattingEngine;
+
+  /// The user's own Anthropic key, read from the Keychain for this session and
+  /// sent only to the backend on 127.0.0.1, only when the engine is "claude".
+  /// The backend never logs it.
+  final String? anthropicApiKey;
+
   const PostProcessingOptions({
     this.smartCaps = true,
     this.punctuation = true,
@@ -74,6 +82,8 @@ class PostProcessingOptions {
     this.customTerms,
     this.aiFormatting = false,
     this.ollamaHost,
+    this.aiFormattingEngine,
+    this.anthropicApiKey,
   });
 
   factory PostProcessingOptions.fromJson(Map<String, dynamic> json) => _$PostProcessingOptionsFromJson(json);

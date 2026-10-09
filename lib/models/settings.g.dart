@@ -45,6 +45,13 @@ Settings _$SettingsFromJson(Map<String, dynamic> json) => Settings(
           .toList() ??
       const [],
   aiFormatting: json['aiFormatting'] as bool? ?? true,
+  aiFormattingEngine:
+      $enumDecodeNullable(
+        _$AiFormattingEngineEnumMap,
+        json['aiFormattingEngine'],
+        unknownValue: AiFormattingEngine.local,
+      ) ??
+      AiFormattingEngine.local,
   keepTranscriptOnClipboard: json['keepTranscriptOnClipboard'] as bool? ?? true,
   meetingAutoDetect: json['meetingAutoDetect'] as bool? ?? true,
   meetingNeverDetectBundleIds:
@@ -95,6 +102,8 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'disfluencyCleanup': instance.disfluencyCleanup,
   'customTerms': instance.customTerms,
   'aiFormatting': instance.aiFormatting,
+  'aiFormattingEngine':
+      _$AiFormattingEngineEnumMap[instance.aiFormattingEngine]!,
   'keepTranscriptOnClipboard': instance.keepTranscriptOnClipboard,
   'meetingAutoDetect': instance.meetingAutoDetect,
   'meetingNeverDetectBundleIds': instance.meetingNeverDetectBundleIds,
@@ -111,6 +120,11 @@ Map<String, dynamic> _$SettingsToJson(Settings instance) => <String, dynamic>{
   'bringToFrontDuringRecording': instance.bringToFrontDuringRecording,
   'dockVisibilityMode':
       _$DockVisibilityModeEnumMap[instance.dockVisibilityMode]!,
+};
+
+const _$AiFormattingEngineEnumMap = {
+  AiFormattingEngine.local: 'local',
+  AiFormattingEngine.claude: 'claude',
 };
 
 const _$OrbExpressivenessEnumMap = {

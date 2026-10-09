@@ -315,6 +315,18 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
         await _appService.modelManager.deleteOllamaModel(call.arguments as String);
         return true;
 
+      // The Anthropic key lives in the Keychain, reachable only from this
+      // engine. The settings window may save or remove it, and learns only
+      // whether one is saved — the key never travels back to it.
+      case 'anthropic_key_status':
+        return _appService.anthropicKeys.hasKey();
+
+      case 'save_anthropic_key':
+        return _appService.anthropicKeys.save(call.arguments as String);
+
+      case 'delete_anthropic_key':
+        return _appService.anthropicKeys.delete();
+
       case 'save_settings':
         // Settings window wants to save new settings
         // Convert from platform channel Map<Object?, Object?> to Map<String, dynamic>

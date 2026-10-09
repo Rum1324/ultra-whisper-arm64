@@ -22,4 +22,35 @@ void main() {
   test('the wire default is off, so an omitted flag never waits on Ollama', () {
     expect(PostProcessingOptions.fromJson(const {}).aiFormatting, isFalse);
   });
+
+  test('the engine defaults to local, also for settings saved before it existed', () {
+    expect(const Settings().aiFormattingEngine, AiFormattingEngine.local);
+    final legacy = const Settings().toJson()..remove('aiFormattingEngine');
+    expect(Settings.fromJson(legacy).aiFormattingEngine, AiFormattingEngine.local);
+  });
+
+  test('an engine name a newer build wrote falls back to local', () {
+    final future = const Settings().toJson()..['aiFormattingEngine'] = 'someday';
+    expect(Settings.fromJson(future).aiFormattingEngine, AiFormattingEngine.local);
+  });
+
+  test('choosing Claude survives a save and reload', () {
+    final claude = const Settings().copyWith(aiFormattingEngine: AiFormattingEngine.claude);
+    expect(Settings.fromJson(claude.toJson()).aiFormattingEngine, AiFormattingEngine.claude);
+  });
+
+  test('the API key is never part of the saved settings', () {
+    final json = const Settings().copyWith(aiFormattingEngine: AiFormattingEngine.claude).toJson();
+    expect(json.keys.where((k) => RegExp('apikey|anthropic', caseSensitive: false).hasMatch(k)), isEmpty);
+  });
+
+  test('the backend receives the engine and the key under post', () {
+    const options = PostProcessingOptions(
+      aiFormatting: true,
+      aiFormattingEngine: 'claude',
+      anthropicApiKey: 'sk-ant-test',
+    );
+    expect(options.toJson()['aiFormattingEngine'], 'claude');
+    expect(options.toJson()['anthropicApiKey'], 'sk-ant-test');
+  });
 }

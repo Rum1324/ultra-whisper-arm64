@@ -58,6 +58,15 @@ class AppDelegate: FlutterAppDelegate {
       FolderPickerHandler.handleMethodCall(call: call, result: result)
     })
 
+    // The user's own Anthropic key for Claude AI formatting, in the Keychain.
+    let keychainChannel = FlutterMethodChannel(name: "com.ultrawhisper.keychain",
+                                               binaryMessenger: controller.engine.binaryMessenger)
+
+    keychainChannel.setMethodCallHandler({
+      (call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
+      KeychainHandler.handleMethodCall(call: call, result: result)
+    })
+
     // Attempt to restore volume on launch (crash recovery)
     VolumeController.restoreVolumeOnLaunch()
 

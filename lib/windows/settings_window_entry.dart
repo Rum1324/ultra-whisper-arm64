@@ -241,6 +241,12 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   /// unsaved edit, so it cannot answer that once a new model is selected.
   late final String _runningSpeechModelId;
 
+  /// Whether an Anthropic key is in the Keychain; null until the main engine
+  /// answers. This window never sees the key itself.
+  bool? _hasAnthropicKey;
+  final TextEditingController _anthropicKeyController = TextEditingController();
+  String? _anthropicKeyError;
+
   @override
   void initState() {
     super.initState();
@@ -249,10 +255,34 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     _models
       ..addListener(_onModelsChanged)
       ..start();
+    _loadAnthropicKeyStatus();
   }
 
   void _onModelsChanged() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _loadAnthropicKeyStatus() async {
+    final has = await DesktopMultiWindow.invokeMethod(0, 'anthropic_key_status');
+    if (mounted) setState(() => _hasAnthropicKey = has == true);
+  }
+
+  Future<void> _saveAnthropicKey() async {
+    final key = _anthropicKeyController.text.trim();
+    if (!key.startsWith('sk-ant-')) {
+      setState(() => _anthropicKeyError = 'That does not look like an Anthropic key (sk-ant-…).');
+      return;
+    }
+    final ok = await DesktopMultiWindow.invokeMethod(0, 'save_anthropic_key', key);
+    _anthropicKeyController.clear();
+    if (!mounted) return;
+    setState(() => _anthropicKeyError = ok == true ? null : 'Could not save the key to the Keychain.');
+    await _loadAnthropicKeyStatus();
+  }
+
+  Future<void> _removeAnthropicKey() async {
+    await DesktopMultiWindow.invokeMethod(0, 'delete_anthropic_key');
+    await _loadAnthropicKeyStatus();
   }
 
   @override
@@ -260,6 +290,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     _models
       ..removeListener(_onModelsChanged)
       ..dispose();
+    _anthropicKeyController.dispose();
     super.dispose();
   }
 
@@ -584,6 +615,84 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     ];
   }
 
+  List<Widget> _aiFormattingEngineRows() {
+    final c = FocusColors.of(context);
+    final claude = _settings.aiFormattingEngine == AiFormattingEngine.claude;
+    return [
+      FocusRow(
+        title: 'Engine',
+        subtitle: claude
+            ? 'Claude Haiku with your own API key — about 0.8 s, nothing to download.'
+            : 'gemma4:e4b on this Mac via Ollama — private; download it under Local AI above.',
+        trailing: DropdownButtonHideUnderline(
+          child: DropdownButton<AiFormattingEngine>(
+            value: _settings.aiFormattingEngine,
+            onChanged: (value) {
+              if (value != null) {
+                _updateSettings(_settings.copyWith(aiFormattingEngine: value));
+              }
+            },
+            dropdownColor: c.surface,
+            borderRadius: const BorderRadius.all(FocusRadius.r12),
+            style: FocusText.control.copyWith(color: c.ink),
+            iconEnabledColor: c.ink2,
+            items: const [
+              DropdownMenuItem(
+                value: AiFormattingEngine.local,
+                child: Text('On this Mac'),
+              ),
+              DropdownMenuItem(
+                value: AiFormattingEngine.claude,
+                child: Text('Claude (API key)'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (claude)
+        _hasAnthropicKey == true
+            ? FocusRow(
+                title: 'Anthropic API key',
+                subtitle: 'Saved in your Keychain.',
+                trailing: TextButton(
+                  onPressed: _removeAnthropicKey,
+                  child: const Text('Remove'),
+                ),
+              )
+            : FocusRow(
+                title: 'Anthropic API key',
+                subtitle: _anthropicKeyError ??
+                    'Create one at platform.claude.com → API keys. '
+                        'It is stored in your Keychain, never in a file.',
+                trailing: SizedBox(
+                  width: 260,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _anthropicKeyController,
+                          obscureText: true,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          decoration: const InputDecoration(
+                            hintText: 'sk-ant-…',
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) => _saveAnthropicKey(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _saveAnthropicKey,
+                        child: const Text('Save'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+    ];
+  }
+
   List<Widget> _advancedSection() {
     return [
       const FocusLabel('Post-processing'),
@@ -609,17 +718,27 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 _updateSettings(_settings.copyWith(disfluencyCleanup: value)),
           ),
           FocusSettingRow(
-            title: 'AI formatting (local)',
-            subtitle: 'Polishes each dictation with gemma4:e4b via Ollama — '
-                'fillers, natural punctuation, numbers, Japanese 、。. Adds '
-                'about a second. Download the model under Local AI above; '
-                'without it the options above are used as before.',
+            title: 'AI formatting',
+            subtitle: 'Polishes each dictation — fillers, natural punctuation, '
+                'numbers, Japanese 、。. Whenever the engine below is not '
+                'available, the options above are used as before.',
             value: _settings.aiFormatting,
             onChanged: (value) =>
                 _updateSettings(_settings.copyWith(aiFormatting: value)),
           ),
+          if (_settings.aiFormatting) ..._aiFormattingEngineRows(),
         ],
       ),
+      if (_settings.aiFormatting &&
+          _settings.aiFormattingEngine == AiFormattingEngine.claude) ...[
+        const SizedBox(height: 8),
+        const FocusCaption(
+          'With Claude, each dictation is sent to Anthropic using your key. '
+          'Anthropic does not train on API data and deletes it after 30 days. '
+          'About \$0.0001 per dictation, billed to your account. Offline or '
+          'without a key, the options above are used.',
+        ),
+      ],
       _groupGap,
       const FocusLabel('Pasting'),
       FocusGroup(

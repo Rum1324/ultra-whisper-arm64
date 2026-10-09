@@ -289,10 +289,13 @@ class WhisperCppBackend:
             # flag must not suddenly start waiting on Ollama.
             formatting = 'rules'
             if post.get('aiFormatting', False) and full_text:
+                # The API key rides in the session options and is never logged.
                 formatted = dictation_formatter.format_dictation(
                     full_text,
                     custom_terms=custom_terms or None,
                     host=ollama_host(post.get('ollamaHost')),
+                    engine=post.get('aiFormattingEngine') or dictation_formatter.ENGINE_LOCAL,
+                    api_key=post.get('anthropicApiKey'),
                 )
                 full_text, formatting = formatted.text, formatted.source
                 logger.info(f"✨ AI formatting: {formatting}")
@@ -444,9 +447,13 @@ class WebSocketServer:
             # Load the formatting model while the user is still speaking, so the
             # first dictation after an idle spell doesn't pay the multi-second
             # load on top of the formatting pass. Fire-and-forget; never raises.
+            # With Claude there is no model to load; warming imports the SDK
+            # and builds the client so the first request skips that work.
             host = ollama_host(post.get('ollamaHost'))
+            engine = post.get('aiFormattingEngine') or dictation_formatter.ENGINE_LOCAL
+            api_key = post.get('anthropicApiKey')
             asyncio.get_event_loop().run_in_executor(
-                None, lambda: dictation_formatter.warm(host=host)
+                None, lambda: dictation_formatter.warm(host=host, engine=engine, api_key=api_key)
             )
 
         logger.info(f"Started transcription session: {session_id}")

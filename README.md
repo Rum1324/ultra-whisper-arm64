@@ -3,7 +3,7 @@
 
   # UltraWhisper
 
-  **Fast local transcription with 100% privacy, optimized for Apple Silicon**
+  **Fast local transcription, private by default, optimized for Apple Silicon**
 
   [![macOS](https://img.shields.io/badge/macOS-13.0+-blue.svg)](https://www.apple.com/macos)
   [![Apple Silicon](https://img.shields.io/badge/Apple_Silicon-M1%2FM2%2FM3-orange.svg)](https://www.apple.com/mac)
@@ -16,7 +16,8 @@
 
 ## Features
 
-- **🔒 100% Local & Private** - All transcription happens on your device. After the one-time model download no internet is needed, and no audio or text leaves your Mac
+- **🔒 Private by Default** - All transcription happens on your device. After the one-time model download no internet is needed, and no audio or text leaves your Mac — unless you choose Claude for AI formatting ([below](#ai-formatting-on-your-mac-or-with-claude))
+- **✨ AI Formatting** - Tidies each dictation: fillers out, natural punctuation, numbers as digits, Japanese 、。. Runs on your Mac, or on Claude Haiku with your own API key
 - **⚡ Blazing Fast** - Metal GPU acceleration on Apple Silicon for real-time transcription
 - **📋 Auto-Paste** - Automatically pastes transcribed text into your current app when done
 - **🎙️ Two Hotkeys** - `⌥⇧R` to dictate, `⌥⇧E` to dictate and press Return
@@ -48,8 +49,8 @@ Models can be downloaded, switched or deleted later in **Settings → Speech mod
 
 - macOS 13.0 (Ventura) or later
 - Apple Silicon (M1 or later)
-- 8 GB memory works with the light speech model; 16 GB for the full one; 24 GB+ for AI formatting
-- 1–2 GB free disk, plus ~10 GB for AI formatting and ~12–17 GB for meeting notes
+- 8 GB memory works with the light speech model; 16 GB for the full one; 24 GB+ for AI formatting on your Mac (any Mac with Claude)
+- 1–2 GB free disk, plus ~10 GB for AI formatting on your Mac and ~12–17 GB for meeting notes
 
 ## Usage
 
@@ -70,6 +71,25 @@ Open **Settings** from the menu bar to customize:
 - **Custom Dictionary**: Add technical terms like "Kubernetes", "PostgreSQL", etc.
 - **App Visibility**: Choose menu bar only, Dock only, or both
 - **AI Handoff**: Optional macro to send transcribed text to AI assistants
+- **AI Formatting**: On your Mac or with Claude — see below
+
+### AI formatting: on your Mac or with Claude
+
+**Settings → Advanced → AI formatting** cleans up each dictation after it is transcribed. Pick where it runs under **Engine**:
+
+| | On this Mac | Claude (API key) |
+|---|---|---|
+| Model | gemma4:e4b via Ollama | Claude Haiku 5.5 |
+| Wait after you stop talking | ~0.4 s when loaded, 4–7 s after it was unloaded | ~0.8 s, every time |
+| Needs | 24 GB+ memory, ~10 GB download | An Anthropic API key and internet |
+| Cost | Free | About $0.0001 per dictation, billed to your Anthropic account |
+| Your text | Never leaves your Mac | Sent to Anthropic |
+
+To use Claude, create a key at [platform.claude.com](https://platform.claude.com) → API keys, choose **Claude (API key)**, and paste it into **Anthropic API key**. The key is stored in your macOS Keychain — never in a file, a log, or the app — and you can remove it there at any time.
+
+**What Claude means for privacy:** with Claude selected, the text of each dictation (never the audio) goes to Anthropic's API. Anthropic does not train on API data by default and deletes it after 30 days ([details](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data)). Anything you dictate — including other people's names — is part of that text. Transcription itself always stays on your Mac.
+
+Either engine falls back to the plain transcript when it can't run: no model, no key, offline, out of credits, or an answer that doesn't look like a cleanup of what you said.
 
 ## How It Works
 
@@ -81,7 +101,7 @@ UltraWhisper uses a hybrid architecture to deliver fast, private transcription:
 4. **Model**: Whisper large-v3-turbo or a lighter variant (GGML format), downloaded once at setup and stored locally
 5. **Communication**: WebSocket connection on localhost for low-latency audio streaming
 
-**Privacy First**: Everything runs locally on your Mac. No cloud services, no telemetry, no data collection.
+**Privacy First**: Transcription runs locally on your Mac. No telemetry, no data collection. The one optional exception is AI formatting with Claude, which sends dictation text to Anthropic with your own key — off unless you choose it.
 
 ## Troubleshooting
 
