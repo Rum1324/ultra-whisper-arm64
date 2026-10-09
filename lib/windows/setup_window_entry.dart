@@ -333,7 +333,7 @@ class _SetupFlowState extends State<SetupFlow> {
             trailing: Icon(Icons.translate, size: 20),
           ),
           const FocusRow(
-            title: 'Meetings, recorded both ways',
+            title: 'Meetings, recorded both ways (beta)',
             subtitle: 'When a call starts, UltraWhisper offers to transcribe '
                 'your side and theirs. macOS asks for System Audio Recording '
                 'the first time.',
@@ -555,7 +555,7 @@ class _SetupFlowState extends State<SetupFlow> {
             onChanged: _formattingAllowed ? (v) => setState(() => _aiFormatting = v) : null,
           ),
           _aiSwitch(
-            title: 'Meeting notes',
+            title: 'Meeting notes (beta)',
             subtitle: _notesAllowed
                 ? 'A summary with decisions and action items after each '
                     'meeting. The model is large and works hard while it writes.'
@@ -675,7 +675,7 @@ class _SetupFlowState extends State<SetupFlow> {
             if (notes.tag == _notesTag)
               OllamaModelRow(
                 model: notes,
-                title: 'Meeting notes',
+                title: 'Meeting notes (beta)',
                 status: status,
                 client: _models,
                 allowDelete: false,

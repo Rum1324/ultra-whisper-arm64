@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **UltraWhisper v0.9.9** - a fast, local-first macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
+This is **UltraWhisper v1.0.0** - a fast, local-first macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
 
 **Key Features:**
 - Local-only transcription for privacy and offline use
@@ -120,7 +120,7 @@ Settings → Advanced → *AI Formatting (local)*, on by default, runs each dict
 
 The LLM output is **discarded** — and the rule-based text pasted — when Ollama is unreachable, the model is missing, it times out, the language changed, or the output is outside 40–125% of the input size (words for English, characters for Japanese). That size band is what catches a small model *answering* a dictated question or dropping sentences. The floor drops to 12% only when the dictation carries a correction cue (*no wait*, *never mind*, *scratch that*, いや, じゃなくて…), because resolving a change of mind to the final decision is the one legitimate way to lose most of the text; self-correction resolution needed its own few-shot examples — the rule alone was ignored. Output with a doubled kana run the speaker never said is also discarded: e4b turns 「4時からです」 into 「4時からからです」 without an example showing it. The rule pass runs again on accepted output, so Japanese punctuation is guaranteed by code rather than by the prompt. `start_session` preloads the model so its load overlaps with speaking.
 
-**Claude engine (v0.9.9).** Settings → Advanced → AI formatting → Engine picks *On this Mac* (default) or *Claude (API key)*: Claude Haiku 5.5 (`claude-haiku-5-5`) via [claude_client.py](backend/claude_client.py), same prompt, same size-band check, same fallback to the rule-based text. Chosen by measurement (2026-10-08, `backend/tools/bench_formatter_latency*.py`): Haiku 0.8 s median / 0.9 s worst after the user stops talking vs gemma's 3.7 s / 6.6 s when it has to load; ~$0.0001 per dictation. The **user's own key** lives in the login Keychain ([KeychainHandler.swift](macos/Runner/KeychainHandler.swift), channel `com.ultrawhisper.keychain`), is read by the main engine (`AnthropicKeyStore`), and rides in `start_session.post.anthropicApiKey` to the backend on 127.0.0.1 only when the engine is Claude. Never put it in `Settings`, a log, or the bundle; the settings window only learns *whether* a key is saved. This is the one path where dictation text leaves the Mac — the README says so; keep it opt-in and keep transcription local. The `anthropic` SDK is installed into `backend/python_bundle` (+23 MB) and imported lazily.
+**Claude engine (v0.9.9).** Settings → Advanced → AI formatting → Engine picks *On this Mac* (default) or *Claude (API key)*; saving a key selects Claude (and turns formatting on), removing it returns to local: Claude Haiku 5.5 (`claude-haiku-5-5`) via [claude_client.py](backend/claude_client.py), same prompt, same size-band check, same fallback to the rule-based text. Chosen by measurement (2026-10-08, `backend/tools/bench_formatter_latency*.py`): Haiku 0.8 s median / 0.9 s worst after the user stops talking vs gemma's 3.7 s / 6.6 s when it has to load; ~$0.0001 per dictation. The **user's own key** lives in the login Keychain ([KeychainHandler.swift](macos/Runner/KeychainHandler.swift), channel `com.ultrawhisper.keychain`), is read by the main engine (`AnthropicKeyStore`), and rides in `start_session.post.anthropicApiKey` to the backend on 127.0.0.1 only when the engine is Claude. Never put it in `Settings`, a log, or the bundle; the settings window only learns *whether* a key is saved. This is the one path where dictation text leaves the Mac — the README says so; keep it opt-in and keep transcription local. The `anthropic` SDK is installed into `backend/python_bundle` (+23 MB) and imported lazily.
 
 ### First-run setup and models
 
@@ -163,7 +163,7 @@ A release ships **no whisper model** (99 MB instead of 1.7 GB). Until `Settings.
 
 ## Project Status
 
-**Current State**: v0.9.0, shipping. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
+**Current State**: v1.0.0, shipping. Meeting notes are labelled **beta** in the UI and README until a real meeting has gone end to end. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
 
 **In progress**: meeting notes — record a meeting as two tracks, transcribe it, and generate a structured note with a local LLM. Merged to `main`. See [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md) and `backend/summarize/`.
 

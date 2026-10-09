@@ -277,11 +277,23 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     _anthropicKeyController.clear();
     if (!mounted) return;
     setState(() => _anthropicKeyError = ok == true ? null : 'Could not save the key to the Keychain.');
+    // Saving a key is the choice: Claude becomes the engine. Picking "On this
+    // Mac" afterwards still sticks — only saving a key switches it.
+    if (ok == true) {
+      _updateSettings(_settings.copyWith(
+        aiFormatting: true,
+        aiFormattingEngine: AiFormattingEngine.claude,
+      ));
+    }
     await _loadAnthropicKeyStatus();
   }
 
   Future<void> _removeAnthropicKey() async {
     await DesktopMultiWindow.invokeMethod(0, 'delete_anthropic_key');
+    // Without a key Claude can only fall back to the plain transcript.
+    if (_settings.aiFormattingEngine == AiFormattingEngine.claude) {
+      _updateSettings(_settings.copyWith(aiFormattingEngine: AiFormattingEngine.local));
+    }
     await _loadAnthropicKeyStatus();
   }
 
@@ -445,7 +457,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             if (notes.tag == _settings.meetingSummaryModel)
               OllamaModelRow(
                 model: notes,
-                title: 'Meeting notes model',
+                title: 'Meeting notes model (beta)',
                 status: status,
                 client: _models,
               ),
@@ -582,7 +594,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
 
   List<Widget> _meetingsSection() {
     return [
-      const FocusLabel('Meetings'),
+      const FocusLabel('Meetings (beta)'),
       FocusGroup(
         children: [
           FocusSettingRow(
@@ -649,8 +661,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           ),
         ),
       ),
-      if (claude)
-        _hasAnthropicKey == true
+      // Shown for both engines: saving a key is how Claude gets picked.
+      _hasAnthropicKey == true
             ? FocusRow(
                 title: 'Anthropic API key',
                 subtitle: 'Saved in your Keychain.',
@@ -662,8 +674,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             : FocusRow(
                 title: 'Anthropic API key',
                 subtitle: _anthropicKeyError ??
-                    'Create one at platform.claude.com → API keys. '
-                        'It is stored in your Keychain, never in a file.',
+                    'Saving a key switches the engine to Claude. Create one at '
+                        'platform.claude.com → API keys; it is stored in your '
+                        'Keychain, never in a file.',
                 trailing: SizedBox(
                   width: 260,
                   child: Row(
