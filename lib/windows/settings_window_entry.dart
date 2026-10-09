@@ -180,6 +180,10 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
     final c = FocusColors.of(context);
     return Column(
       children: [
+        // A fixed strip for the traffic-light buttons: content scrolls
+        // beneath it rather than under the buttons.
+        const SizedBox(height: 36),
+
         // Settings content. The header scrolls away with it.
         Expanded(
           child: SettingsWindowBody(
@@ -360,8 +364,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      // Top padding clears the traffic-light buttons.
-      padding: EdgeInsets.fromLTRB(36, widget.header == null ? 8 : 40, 36, 24),
+      padding: const EdgeInsets.fromLTRB(36, 6, 36, 24),
       child: Center(
         child: ConstrainedBox(
           // Focus `measure`: one column, never wider than 640px.
