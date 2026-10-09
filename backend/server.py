@@ -762,6 +762,47 @@ class WebSocketServer:
         await websocket.send(json.dumps(response))
 
 
+# How long SIGTERM/SIGINT waits for open connections to close before the
+# process exits anyway. The app restarts the backend on a model change and
+# waits for the port, so this bounds that restart too.
+SHUTDOWN_GRACE_S = 1.5
+
+
+async def serve_until_signalled(server) -> None:
+    """
+    Serve until SIGTERM or SIGINT, then close `server` and exit the process.
+
+    The handlers go through `loop.add_signal_handler`, not `signal.signal`.
+    A `signal.signal` handler runs inside the interrupted `kevent` call, and
+    `server.close()` there only schedules a task — `call_soon` does not wake
+    the selector, so an idle loop went straight back to sleep with no timeout
+    and never exited (2026-10-08). `add_signal_handler` installs a wakeup fd,
+    so the loop wakes up and runs the close.
+
+    The close gets `SHUTDOWN_GRACE_S` to say 1001 to connected clients; then
+    the process exits with `os._exit`, like the parent watchdog. A handler
+    awaiting a whisper inference or a summary on an executor thread cannot be
+    cancelled, and `asyncio.run` and interpreter exit would both join those
+    threads.
+    """
+    loop = asyncio.get_running_loop()
+    stop = asyncio.Event()
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(signum, stop.set)
+
+    await stop.wait()
+    logger.info("Shutting down server...")
+    server.close()
+    try:
+        await asyncio.wait_for(server.wait_closed(), SHUTDOWN_GRACE_S)
+    except asyncio.TimeoutError:
+        logger.warning(f"Connections still open after {SHUTDOWN_GRACE_S}s; exiting anyway")
+
+    sys.stdout.flush()
+    logging.shutdown()
+    os._exit(0)
+
+
 async def main():
     """Main server entry point"""
     parser = argparse.ArgumentParser(description='UltraWhisper v3 Backend Server (whisper.cpp + Metal)')
@@ -812,16 +853,7 @@ async def main():
 
         logger.info(f"WebSocket server started on {args.host}:{actual_port}")
 
-        # Set up signal handlers
-        def signal_handler(signum, frame):
-            logger.info("Shutting down server...")
-            server.close()
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        # Wait for server to close
-        await server.wait_closed()
+        await serve_until_signalled(server)
 
     except Exception as e:
         logger.error(f"Server error: {e}")

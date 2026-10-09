@@ -48,10 +48,12 @@ app.*.map.json
 # GlassyWhisper Specific
 # ============================================
 
-# Backend - Large files that should not be in git
-backend/python_bundle/
+# Backend - Large files that should not be in git.
+# No trailing slash on the two directories: in a worktree they are symlinks to
+# the primary checkout, and `dir/` only matches a real directory.
+backend/python_bundle
 backend/whisper.cpp/models/*.bin
-backend/whisper.cpp/build/
+backend/whisper.cpp/build
 backend/whisper.cpp/.git/
 
 # Distribution artifacts
