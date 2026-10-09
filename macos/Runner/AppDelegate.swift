@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import desktop_multi_window
 
 @main
 class AppDelegate: FlutterAppDelegate {
@@ -66,6 +67,10 @@ class AppDelegate: FlutterAppDelegate {
       (call: FlutterMethodCall, result: @escaping FlutterResult) -> Void in
       KeychainHandler.handleMethodCall(call: call, result: result)
     })
+
+    FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
+      GlassWindow.apply(to: controller)
+    }
 
     // Attempt to restore volume on launch (crash recovery)
     VolumeController.restoreVolumeOnLaunch()
