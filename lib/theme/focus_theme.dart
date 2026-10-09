@@ -124,11 +124,15 @@ class FocusColors extends ThemeExtension<FocusColors> {
   );
 
   /// Black glass: the settings and setup windows, always, in light and dark
-  /// mode alike (design "F", 2026-10-08). [bg] is a translucent tint over the
-  /// native blur `GlassWindow.swift` puts behind those windows, so it must stay
-  /// see-through; cards are a faint white wash with a hairline edge.
+  /// mode alike (design "F", 2026-10-08): a near-black ground, cards a faint
+  /// white wash with a hairline edge.
+  ///
+  /// The ground is OPAQUE on purpose. A see-through window (native
+  /// NSVisualEffectView behind a non-opaque desktop_multi_window window) took
+  /// no clicks or scrolls at all — 1.0.2 was held over it — so the blur waits
+  /// until it can be done without breaking input.
   static const glass = FocusColors(
-    bg: Color.fromRGBO(4, 4, 6, .62),
+    bg: Color(0xFF111214),
     surface: Color.fromRGBO(255, 255, 255, .05),
     sheet: Color.fromRGBO(255, 255, 255, .07),
     ink: Color(0xFFFFFFFF),

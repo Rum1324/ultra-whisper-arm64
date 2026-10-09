@@ -36,7 +36,10 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
   Future<void> _loadSettings() async {
     try {
       // Request settings from main window instead of using platform channels
-      final settingsJson = await DesktopMultiWindow.invokeMethod(0, 'get_settings');
+      final settingsJson = await DesktopMultiWindow.invokeMethod(
+        0,
+        'get_settings',
+      );
       debugPrint('Received settings from main window: $settingsJson');
       debugPrint('Settings type: ${settingsJson.runtimeType}');
 
@@ -68,10 +71,18 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
   void _handleSettingsSave(Settings newSettings) async {
     debugPrint('=== SAVE SETTINGS START ===');
     debugPrint('_SettingsWindowAppState: _handleSettingsSave called');
-    debugPrint('_SettingsWindowAppState: newSettings = ${newSettings.toJson()}');
+    debugPrint(
+      '_SettingsWindowAppState: newSettings = ${newSettings.toJson()}',
+    );
     try {
-      debugPrint('_SettingsWindowAppState: Calling save_settings on main window...');
-      final result = await DesktopMultiWindow.invokeMethod(0, 'save_settings', newSettings.toJson());
+      debugPrint(
+        '_SettingsWindowAppState: Calling save_settings on main window...',
+      );
+      final result = await DesktopMultiWindow.invokeMethod(
+        0,
+        'save_settings',
+        newSettings.toJson(),
+      );
       debugPrint('_SettingsWindowAppState: save_settings returned: $result');
 
       debugPrint('_SettingsWindowAppState: Now calling _closeWindow...');
@@ -146,8 +157,12 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
   }
 
   void _handleSave() {
-    debugPrint('SettingsWindowContent: Save button clicked, saving settings...');
-    debugPrint('SettingsWindowContent: Current settings: ${_settings.toJson()}');
+    debugPrint(
+      'SettingsWindowContent: Save button clicked, saving settings...',
+    );
+    debugPrint(
+      'SettingsWindowContent: Current settings: ${_settings.toJson()}',
+    );
     widget.onSave(_settings);
   }
 
@@ -165,36 +180,31 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
     final c = FocusColors.of(context);
     return Column(
       children: [
-        // Header, padded down past the traffic-light buttons.
-        Padding(
-          padding: const EdgeInsets.fromLTRB(36, 40, 16, 12),
-          child: Row(
-            children: [
-              const FocusOrbMark(),
-              const SizedBox(width: 14),
-              Text(
-                'Settings',
-                style: FocusText.sheetTitle.copyWith(
-                  color: c.ink,
-                  fontSize: 28,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18),
-                tooltip: 'Close',
-                onPressed: _handleCancel,
-              ),
-            ],
-          ),
-        ),
-
-        // Settings content
+        // Settings content. The header scrolls away with it.
         Expanded(
           child: SettingsWindowBody(
             settings: _settings,
             onSettingsChanged: _handleSettingsUpdate,
+            header: Row(
+              children: [
+                const FocusOrbMark(),
+                const SizedBox(width: 14),
+                Text(
+                  'Settings',
+                  style: FocusText.sheetTitle.copyWith(
+                    color: c.ink,
+                    fontSize: 28,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Close',
+                  onPressed: _handleCancel,
+                ),
+              ],
+            ),
           ),
         ),
 
@@ -204,15 +214,9 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton(
-                onPressed: _handleCancel,
-                child: const Text('Cancel'),
-              ),
+              TextButton(onPressed: _handleCancel, child: const Text('Cancel')),
               const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _handleSave,
-                child: const Text('Save'),
-              ),
+              FilledButton(onPressed: _handleSave, child: const Text('Save')),
             ],
           ),
         ),
@@ -227,10 +231,15 @@ class SettingsWindowBody extends StatefulWidget {
   final Settings settings;
   final ValueChanged<Settings> onSettingsChanged;
 
+  /// Shown above the first section, inside the scroll view, so it scrolls
+  /// away with the content.
+  final Widget? header;
+
   const SettingsWindowBody({
     super.key,
     required this.settings,
     required this.onSettingsChanged,
+    this.header,
   });
 
   @override
@@ -267,27 +276,43 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   }
 
   Future<void> _loadAnthropicKeyStatus() async {
-    final has = await DesktopMultiWindow.invokeMethod(0, 'anthropic_key_status');
+    final has = await DesktopMultiWindow.invokeMethod(
+      0,
+      'anthropic_key_status',
+    );
     if (mounted) setState(() => _hasAnthropicKey = has == true);
   }
 
   Future<void> _saveAnthropicKey() async {
     final key = _anthropicKeyController.text.trim();
     if (!key.startsWith('sk-ant-')) {
-      setState(() => _anthropicKeyError = 'That does not look like an Anthropic key (sk-ant-…).');
+      setState(
+        () => _anthropicKeyError =
+            'That does not look like an Anthropic key (sk-ant-…).',
+      );
       return;
     }
-    final ok = await DesktopMultiWindow.invokeMethod(0, 'save_anthropic_key', key);
+    final ok = await DesktopMultiWindow.invokeMethod(
+      0,
+      'save_anthropic_key',
+      key,
+    );
     _anthropicKeyController.clear();
     if (!mounted) return;
-    setState(() => _anthropicKeyError = ok == true ? null : 'Could not save the key to the Keychain.');
+    setState(
+      () => _anthropicKeyError = ok == true
+          ? null
+          : 'Could not save the key to the Keychain.',
+    );
     // Saving a key is the choice: Claude becomes the engine. Picking "On this
     // Mac" afterwards still sticks — only saving a key switches it.
     if (ok == true) {
-      _updateSettings(_settings.copyWith(
-        aiFormatting: true,
-        aiFormattingEngine: AiFormattingEngine.claude,
-      ));
+      _updateSettings(
+        _settings.copyWith(
+          aiFormatting: true,
+          aiFormattingEngine: AiFormattingEngine.claude,
+        ),
+      );
     }
     await _loadAnthropicKeyStatus();
   }
@@ -296,7 +321,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
     await DesktopMultiWindow.invokeMethod(0, 'delete_anthropic_key');
     // Without a key Claude can only fall back to the plain transcript.
     if (_settings.aiFormattingEngine == AiFormattingEngine.claude) {
-      _updateSettings(_settings.copyWith(aiFormattingEngine: AiFormattingEngine.local));
+      _updateSettings(
+        _settings.copyWith(aiFormattingEngine: AiFormattingEngine.local),
+      );
     }
     await _loadAnthropicKeyStatus();
   }
@@ -333,7 +360,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(36, 8, 36, 24),
+      // Top padding clears the traffic-light buttons.
+      padding: EdgeInsets.fromLTRB(36, widget.header == null ? 8 : 40, 36, 24),
       child: Center(
         child: ConstrainedBox(
           // Focus `measure`: one column, never wider than 640px.
@@ -341,6 +369,10 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (widget.header != null) ...[
+                widget.header!,
+                const SizedBox(height: 20),
+              ],
               ..._audioSection(),
               _sectionGap,
               ..._modelSection(),
@@ -366,7 +398,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
         children: [
           FocusSettingRow(
             title: 'Reduce system volume while recording',
-            subtitle: 'Lowers other audio so it does not bleed into the '
+            subtitle:
+                'Lowers other audio so it does not bleed into the '
                 'microphone. The volume comes back when recording stops.',
             value: _settings.duckVolumeDuringRecording,
             onChanged: (value) => _updateSettings(
@@ -376,7 +409,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           if (_settings.duckVolumeDuringRecording) ...[
             FocusSettingRow(
               title: 'Skip new Bluetooth devices by default',
-              subtitle: "System audio can't bleed into the mic through "
+              subtitle:
+                  "System audio can't bleed into the mic through "
                   'headphones. This only sets the starting value for a device '
                   'the first time it is used — the table below decides after '
                   'that.',
@@ -418,9 +452,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       FocusCaption(
         changed
             ? 'Saving switches models. Dictation pauses for a few seconds while '
-                'the new one loads.'
+                  'the new one loads.'
             : 'Download a model, then select it. Models are stored in '
-                '~/Library/Application Support/UltraWhisper.',
+                  '~/Library/Application Support/UltraWhisper.',
       ),
       FocusGroup(
         children: [
@@ -505,7 +539,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
               initialValue: _settings.toggleRecordEnterHotkey,
               onChanged: (value) {
                 _updateSettings(
-                    _settings.copyWith(toggleRecordEnterHotkey: value));
+                  _settings.copyWith(toggleRecordEnterHotkey: value),
+                );
               },
             ),
           ),
@@ -522,12 +557,14 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
         children: [
           FocusSettingRow(
             title: 'Show the island while dictating',
-            subtitle: 'A small black pill with the orb and the time appears '
+            subtitle:
+                'A small black pill with the orb and the time appears '
                 'at the top of the screen while you dictate. Off: nothing '
                 'appears, and the menu bar icon shows that recording is on.',
             value: _settings.showDictationOverlay,
-            onChanged: (value) =>
-                _updateSettings(_settings.copyWith(showDictationOverlay: value)),
+            onChanged: (value) => _updateSettings(
+              _settings.copyWith(showDictationOverlay: value),
+            ),
           ),
           FocusRow(
             title: 'Orb expressiveness',
@@ -538,7 +575,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 onChanged: (value) {
                   if (value != null) {
                     _updateSettings(
-                        _settings.copyWith(orbExpressiveness: value));
+                      _settings.copyWith(orbExpressiveness: value),
+                    );
                   }
                 },
                 dropdownColor: c.surface,
@@ -567,7 +605,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 onChanged: (value) {
                   if (value != null) {
                     _updateSettings(
-                        _settings.copyWith(dockVisibilityMode: value));
+                      _settings.copyWith(dockVisibilityMode: value),
+                    );
                   }
                 },
                 dropdownColor: c.surface,
@@ -603,7 +642,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
         children: [
           FocusSettingRow(
             title: 'Detect meetings automatically',
-            subtitle: 'Offer to record when one app is using the microphone '
+            subtitle:
+                'Offer to record when one app is using the microphone '
                 'and playing audio at the same time.',
             value: _settings.meetingAutoDetect,
             onChanged: (value) =>
@@ -611,7 +651,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           ),
           FocusSettingRow(
             title: 'Save transcripts and notes',
-            subtitle: 'The transcript is written when recording stops, before '
+            subtitle:
+                'The transcript is written when recording stops, before '
                 'notes are generated.',
             value: _settings.saveMeetingTranscripts,
             onChanged: (value) => _updateSettings(
@@ -621,7 +662,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           _buildSaveLocationField(),
           FocusSettingRow(
             title: 'Meeting notes',
-            subtitle: 'When a meeting ends, a local model writes a summary '
+            subtitle:
+                'When a meeting ends, a local model writes a summary '
                 'with decisions and action items. Off: you still get the '
                 'transcript.',
             value: _settings.meetingNotes,
@@ -677,46 +719,47 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
       ),
       // Shown for both engines: saving a key is how Claude gets picked.
       _hasAnthropicKey == true
-            ? FocusRow(
-                title: 'Anthropic API key',
-                subtitle: 'Saved in your Keychain.',
-                trailing: TextButton(
-                  onPressed: _removeAnthropicKey,
-                  child: const Text('Remove'),
-                ),
-              )
-            : FocusRow(
-                title: 'Anthropic API key',
-                subtitle: _anthropicKeyError ??
-                    'Saving a key switches the engine to Claude. Create one at '
-                        'platform.claude.com → API keys; it is stored in your '
-                        'Keychain, never in a file.',
-                trailing: SizedBox(
-                  width: 260,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _anthropicKeyController,
-                          obscureText: true,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          decoration: const InputDecoration(
-                            hintText: 'sk-ant-…',
-                            isDense: true,
-                          ),
-                          onSubmitted: (_) => _saveAnthropicKey(),
+          ? FocusRow(
+              title: 'Anthropic API key',
+              subtitle: 'Saved in your Keychain.',
+              trailing: TextButton(
+                onPressed: _removeAnthropicKey,
+                child: const Text('Remove'),
+              ),
+            )
+          : FocusRow(
+              title: 'Anthropic API key',
+              subtitle:
+                  _anthropicKeyError ??
+                  'Saving a key switches the engine to Claude. Create one at '
+                      'platform.claude.com → API keys; it is stored in your '
+                      'Keychain, never in a file.',
+              trailing: SizedBox(
+                width: 260,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _anthropicKeyController,
+                        obscureText: true,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(
+                          hintText: 'sk-ant-…',
+                          isDense: true,
                         ),
+                        onSubmitted: (_) => _saveAnthropicKey(),
                       ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: _saveAnthropicKey,
-                        child: const Text('Save'),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: _saveAnthropicKey,
+                      child: const Text('Save'),
+                    ),
+                  ],
                 ),
               ),
+            ),
     ];
   }
 
@@ -727,7 +770,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
         children: [
           FocusSettingRow(
             title: 'AI formatting',
-            subtitle: 'Polishes each dictation — fillers, natural punctuation, '
+            subtitle:
+                'Polishes each dictation — fillers, natural punctuation, '
                 'numbers, Japanese 、。. Capitals, punctuation and "um"s are '
                 'always tidied by simple rules, with or without it.',
             value: _settings.aiFormatting,
@@ -753,7 +797,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
         children: [
           FocusSettingRow(
             title: 'Keep transcript on clipboard',
-            subtitle: 'Leave the transcript on the clipboard after pasting, '
+            subtitle:
+                'Leave the transcript on the clipboard after pasting, '
                 'so you can paste it again. Turn off to put your previous '
                 'clipboard back.',
             value: _settings.keepTranscriptOnClipboard,
@@ -906,7 +951,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                active == null ? 'Custom tag — pull it with `ollama pull`' : 'Ollama tag',
+                active == null
+                    ? 'Custom tag — pull it with `ollama pull`'
+                    : 'Ollama tag',
                 style: FocusText.caption.copyWith(color: c.ink2),
               ),
               const SizedBox(height: 8),
@@ -948,7 +995,8 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
         children: [
           FocusRow(
             title: 'No devices remembered yet.',
-            subtitle: 'Record once and the device you were listening on will '
+            subtitle:
+                'Record once and the device you were listening on will '
                 'appear here.',
           ),
         ],
@@ -957,8 +1005,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
 
     return FocusGroup(
       children: [
-        for (int i = 0; i < devices.length; i++)
-          _buildDeviceRow(devices[i], i),
+        for (int i = 0; i < devices.length; i++) _buildDeviceRow(devices[i], i),
       ],
     );
   }
@@ -976,8 +1023,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
           FocusSwitch(
             value: device.skipDuck,
             onChanged: (value) {
-              final updated =
-                  List<AudioDevicePref>.from(_settings.audioDevicePrefs);
+              final updated = List<AudioDevicePref>.from(
+                _settings.audioDevicePrefs,
+              );
               updated[index] = device.copyWith(skipDuck: value);
               _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
             },
@@ -987,9 +1035,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             icon: const Icon(Icons.close, size: 16),
             tooltip: 'Forget this device',
             onPressed: () {
-              final updated =
-                  List<AudioDevicePref>.from(_settings.audioDevicePrefs)
-                    ..removeAt(index);
+              final updated = List<AudioDevicePref>.from(
+                _settings.audioDevicePrefs,
+              )..removeAt(index);
               _updateSettings(_settings.copyWith(audioDevicePrefs: updated));
             },
           ),
@@ -1027,7 +1075,9 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
                 onDeleted: () {
                   final updatedTerms = List<String>.from(_settings.customTerms)
                     ..remove(term);
-                  _updateSettings(_settings.copyWith(customTerms: updatedTerms));
+                  _updateSettings(
+                    _settings.copyWith(customTerms: updatedTerms),
+                  );
                 },
               );
             }).toList(),
