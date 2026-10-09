@@ -85,7 +85,7 @@ Open **Settings** from the menu bar to customize:
 | Cost | Free | About $0.0001 per dictation, billed to your Anthropic account |
 | Your text | Never leaves your Mac | Sent to Anthropic |
 
-To use Claude, create a key at [platform.claude.com](https://platform.claude.com) → API keys, choose **Claude (API key)**, and paste it into **Anthropic API key**. The key is stored in your macOS Keychain — never in a file, a log, or the app — and you can remove it there at any time.
+To use Claude, create a key at [platform.claude.com](https://platform.claude.com) → API keys and paste it into **Anthropic API key** — saving it turns AI formatting on and switches the engine to Claude. Removing the key switches back to your Mac. The key is stored in your macOS Keychain — never in a file, a log, or the app — and you can remove it there at any time.
 
 **What Claude means for privacy:** with Claude selected, the text of each dictation (never the audio) goes to Anthropic's API. Anthropic does not train on API data by default and deletes it after 30 days ([details](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data)). Anything you dictate — including other people's names — is part of that text. Transcription itself always stays on your Mac.
 
