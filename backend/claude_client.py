@@ -42,6 +42,15 @@ class ClaudeUnavailable:
 # One client per key, so the TLS connection is reused across dictations: the
 # first request on a fresh client measured 1.1 s against 0.8 s for later ones.
 _clients: dict[str, object] = {}
+
+# How long an idle connection stays open. The SDK's default is 5 s, shorter
+# than the gap between almost any two dictations, so every one paid a fresh
+# DNS + TCP + TLS handshake after the user stopped talking.
+KEEPALIVE_SECONDS = 300.0
+
+# The warm-up request below is a model lookup: a GET that uses no tokens and
+# is not billed. It only exists to open the connection while the user speaks.
+WARM_TIMEOUT = 3.0
 _lock = threading.Lock()
 
 
@@ -53,18 +62,36 @@ def _client(api_key: str):
         if client is None:
             # No retries: a retry doubles the worst-case wait, and the fallback
             # (the rule-based text) is already in hand.
-            client = anthropic.Anthropic(api_key=api_key, max_retries=0)
+            import httpx2  # the HTTP library this SDK version ships on
+
+            client = anthropic.Anthropic(
+                api_key=api_key,
+                max_retries=0,
+                http_client=anthropic.DefaultHttpxClient(
+                    limits=httpx2.Limits(
+                        max_connections=4,
+                        max_keepalive_connections=2,
+                        keepalive_expiry=KEEPALIVE_SECONDS,
+                    )
+                ),
+            )
             _clients.clear()  # a changed key replaces the old one
             _clients[api_key] = client
         return client
 
 
 def warm(api_key: str | None) -> bool:
-    """Import the SDK and build the client while the user is still speaking."""
+    """
+    Open the connection to api.anthropic.com while the user is still speaking.
+
+    Building the client alone connects to nothing, so this also looks the model
+    up — free, no tokens — which leaves a warm TLS connection in the pool for
+    the formatting request that follows.
+    """
     if not api_key:
         return False
     try:
-        _client(api_key)
+        _client(api_key).with_options(timeout=WARM_TIMEOUT).models.retrieve(MODEL)
         return True
     except Exception as exc:  # noqa: BLE001 - warming is best-effort
         _LOG.info("Claude warm-up skipped: %s", type(exc).__name__)

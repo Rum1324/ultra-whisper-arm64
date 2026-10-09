@@ -12,6 +12,7 @@ import sys
 import signal
 import argparse
 import threading
+import time
 from pathlib import Path
 from typing import Dict, Optional, Any
 import websockets
@@ -272,12 +273,15 @@ class WhisperCppBackend:
                 logger.info(f"📖 Using custom dictionary terms: {custom_terms}")
 
             # Use the in-memory model - MUCH faster!
+            whisper_started = time.perf_counter()
             result = self.model.transcribe(
                 audio_array,
                 language=whisper_language,
                 n_threads=4,
                 initial_prompt=initial_prompt
             )
+
+            logger.info(f"⏱️ whisper: {time.perf_counter() - whisper_started:.2f}s")
 
             full_text = apply_post_processing(
                 result['text'],
@@ -290,6 +294,7 @@ class WhisperCppBackend:
             formatting = 'rules'
             if post.get('aiFormatting', False) and full_text:
                 # The API key rides in the session options and is never logged.
+                formatting_started = time.perf_counter()
                 formatted = dictation_formatter.format_dictation(
                     full_text,
                     custom_terms=custom_terms or None,
@@ -298,7 +303,7 @@ class WhisperCppBackend:
                     api_key=post.get('anthropicApiKey'),
                 )
                 full_text, formatting = formatted.text, formatted.source
-                logger.info(f"✨ AI formatting: {formatting}")
+                logger.info(f"✨ AI formatting: {formatting} ({time.perf_counter() - formatting_started:.2f}s)")
             segments = result['segments']
             detected_language = result['language']
 
@@ -447,8 +452,9 @@ class WebSocketServer:
             # Load the formatting model while the user is still speaking, so the
             # first dictation after an idle spell doesn't pay the multi-second
             # load on top of the formatting pass. Fire-and-forget; never raises.
-            # With Claude there is no model to load; warming imports the SDK
-            # and builds the client so the first request skips that work.
+            # With Claude there is no model to load; warming opens the TLS
+            # connection with a free model lookup, so formatting skips the
+            # handshake.
             host = ollama_host(post.get('ollamaHost'))
             engine = post.get('aiFormattingEngine') or dictation_formatter.ENGINE_LOCAL
             api_key = post.get('anthropicApiKey')

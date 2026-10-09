@@ -175,3 +175,53 @@ def test_unknown_engine_stays_local(reply):
     reply["reply"] = "Move the standup to 10:30."
     assert df.format_dictation("move the standup to ten thirty", engine="").source == "llm"
     assert "model" in reply["kwargs"]
+
+
+class _FakeModels:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def retrieve(self, model):
+        self.calls.append(("models.retrieve", model))
+
+
+class _FakeClient:
+    def __init__(self, calls):
+        self.calls = calls
+        self.models = _FakeModels(calls)
+
+    def with_options(self, **kwargs):
+        self.calls.append(("with_options", kwargs))
+        return self
+
+
+def test_claude_warm_opens_the_connection_with_a_free_model_lookup(monkeypatch):
+    # Building a client connects to nothing; warming has to make a request to
+    # leave a TLS connection in the pool. It must be one that is never billed:
+    # a model lookup, never messages.create.
+    calls = []
+    monkeypatch.setattr(claude_client, "_client", lambda key: _FakeClient(calls))
+    assert claude_client.warm("sk-ant-test") is True
+    assert ("models.retrieve", claude_client.MODEL) in calls
+    assert all(name in ("with_options", "models.retrieve") for name, _ in calls)
+
+
+def test_claude_warm_without_a_key_makes_no_request(monkeypatch):
+    monkeypatch.setattr(claude_client, "_client", lambda key: pytest.fail("no key, no client"))
+    assert claude_client.warm(None) is False
+
+
+def test_claude_warm_never_raises(monkeypatch):
+    def boom(key):
+        raise RuntimeError("offline")
+    monkeypatch.setattr(claude_client, "_client", boom)
+    assert claude_client.warm("sk-ant-test") is False
+
+
+def test_claude_client_keeps_idle_connections_open(monkeypatch):
+    # The SDK default (5 s) dropped the connection between dictations.
+    pytest.importorskip("anthropic")  # installed in the app's python_bundle
+    monkeypatch.setattr(claude_client, "_clients", {})
+    client = claude_client._client("sk-ant-test")
+    pool = client._client._transport._pool
+    assert pool._keepalive_expiry == claude_client.KEEPALIVE_SECONDS >= 60

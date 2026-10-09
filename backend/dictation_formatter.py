@@ -206,7 +206,7 @@ def warm(
     engine: str = ENGINE_LOCAL,
     api_key: str | None = None,
 ) -> bool:
-    """Load the model (or the Claude SDK) while the user is still speaking. Never raises."""
+    """Load the model (or open the Claude connection) while the user is still speaking. Never raises."""
     if engine == ENGINE_CLAUDE:
         return claude_client.warm(api_key)
     return preload(model=model, host=host, keep_alive=KEEP_ALIVE) is True
