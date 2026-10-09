@@ -238,7 +238,7 @@ class DownloadControl extends StatelessWidget {
         children: [
           Icon(Icons.check_circle, size: 16, color: c.ok),
           const SizedBox(width: 4),
-          Text('Downloaded', style: FocusText.detail.copyWith(color: c.ink2)),
+          Text('Downloaded', style: FocusText.detail.copyWith(color: c.ok)),
           if (onDelete != null)
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 16),
@@ -252,8 +252,9 @@ class DownloadControl extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        OutlinedButton(
+        TextButton(
           onPressed: onDownload,
+          style: TextButton.styleFrom(foregroundColor: c.accent),
           child: Text('Download $sizeLabel'),
         ),
         if (running?.state == 'failed' && running?.error != null)

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/focus_theme.dart';
 
-/// A group header: UPPERCASE, tracked, ink-2 (Focus `label`).
+/// A group header above a card: sentence case, quiet ink-3.
 class FocusLabel extends StatelessWidget {
   const FocusLabel(this.text, {super.key});
   final String text;
@@ -10,10 +10,34 @@ class FocusLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
       child: Text(
-        text.toUpperCase(),
-        style: FocusText.label.copyWith(color: FocusColors.of(context).ink2),
+        text,
+        style: FocusText.caption.copyWith(color: FocusColors.of(context).ink3),
+      ),
+    );
+  }
+}
+
+/// The orb as a still mark, for window headers. Drawn, not animated: a header
+/// must not cost a frame per vsync (the live orb is `ThinkingOrb`).
+class FocusOrbMark extends StatelessWidget {
+  const FocusOrbMark({super.key, this.size = 36});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          center: Alignment(-0.3, -0.4),
+          radius: 0.75,
+          colors: [Color(0xFFC9F7DC), Color(0xFF33D67A), Color(0xFF0F5C34)],
+          stops: [0.0, 0.45, 1.0],
+        ),
       ),
     );
   }
@@ -36,7 +60,7 @@ class FocusCaption extends StatelessWidget {
   }
 }
 
-/// A white group of rows divided by hairlines (Focus `List`).
+/// A card of rows divided by hairlines (Focus `List`), with a hairline edge.
 class FocusGroup extends StatelessWidget {
   const FocusGroup({super.key, required this.children});
   final List<Widget> children;
@@ -47,7 +71,8 @@ class FocusGroup extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: c.surface,
-        borderRadius: const BorderRadius.all(FocusRadius.r16),
+        borderRadius: const BorderRadius.all(FocusRadius.r18),
+        border: Border.all(color: c.line, width: 0.5),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -99,7 +124,7 @@ class FocusRow extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: FocusText.body.copyWith(fontSize: 14.4, color: c.ink),
+                    style: FocusText.body.copyWith(fontSize: 15.5, color: c.ink),
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),

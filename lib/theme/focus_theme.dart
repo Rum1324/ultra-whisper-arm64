@@ -123,6 +123,31 @@ class FocusColors extends ThemeExtension<FocusColors> {
     onInverse: Color(0xFF000000),
   );
 
+  /// Black glass: the settings and setup windows, always, in light and dark
+  /// mode alike (design "F", 2026-10-08). [bg] is a translucent tint over the
+  /// native blur `GlassWindow.swift` puts behind those windows, so it must stay
+  /// see-through; cards are a faint white wash with a hairline edge.
+  static const glass = FocusColors(
+    bg: Color.fromRGBO(4, 4, 6, .62),
+    surface: Color.fromRGBO(255, 255, 255, .05),
+    sheet: Color.fromRGBO(255, 255, 255, .07),
+    ink: Color(0xFFFFFFFF),
+    ink2: Color.fromRGBO(255, 255, 255, .62),
+    ink3: Color.fromRGBO(255, 255, 255, .40),
+    line: Color.fromRGBO(255, 255, 255, .08),
+    fill: Color.fromRGBO(255, 255, 255, .09),
+    accent: Color(0xFF7CC4FF),
+    accentTint: Color.fromRGBO(124, 196, 255, .14),
+    onAccent: Color(0xFF0F1115),
+    ok: Color(0xFF33D67A),
+    okTint: Color.fromRGBO(51, 214, 122, .14),
+    warn: Color(0xFFFFBF2E),
+    warnTint: Color.fromRGBO(255, 191, 46, .14),
+    bad: Color(0xFFFF544A),
+    inverse: Color(0xFFFFFFFF),
+    onInverse: Color(0xFF000000),
+  );
+
   /// The theme's palette, or [light] under a theme that does not carry one
   /// (widget tests pump a bare MaterialApp).
   static FocusColors of(BuildContext context) =>
@@ -190,6 +215,7 @@ abstract final class FocusRadius {
   static const r12 = Radius.circular(12);
   static const r14 = Radius.circular(14);
   static const r16 = Radius.circular(16);
+  static const r18 = Radius.circular(18);
   static const r26 = Radius.circular(26);
   static const pill = Radius.circular(999);
 }
@@ -298,9 +324,13 @@ abstract final class FocusText {
   );
 }
 
-/// The Material theme for a window that follows the system appearance.
-ThemeData focusTheme(Brightness brightness) {
-  final c = brightness == Brightness.dark ? FocusColors.dark : FocusColors.light;
+/// The black-glass theme of the settings and setup windows.
+ThemeData focusGlassTheme() => focusTheme(Brightness.dark, colors: FocusColors.glass);
+
+/// The Material theme for a window that follows the system appearance, or for
+/// an explicit palette.
+ThemeData focusTheme(Brightness brightness, {FocusColors? colors}) {
+  final c = colors ?? (brightness == Brightness.dark ? FocusColors.dark : FocusColors.light);
   const pill = StadiumBorder();
   final focusRing = BorderSide(color: c.accent, width: 2);
 
@@ -393,9 +423,10 @@ ThemeData focusTheme(Brightness brightness) {
       side: BorderSide(color: c.ink3, width: 1.5),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
     ),
+    // The chosen option reads as "on", like a switch: green.
     radioTheme: RadioThemeData(
       fillColor: WidgetStateProperty.resolveWith(
-        (s) => s.contains(WidgetState.selected) ? c.ink : c.ink3,
+        (s) => s.contains(WidgetState.selected) ? c.ok : c.ink3,
       ),
     ),
     sliderTheme: SliderThemeData(

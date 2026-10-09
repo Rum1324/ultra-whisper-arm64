@@ -99,14 +99,11 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
 
   @override
   Widget build(BuildContext context) {
-    // The settings window follows the system appearance; the overlay and the
-    // meeting panel are the always-black island instead.
     return MaterialApp(
       title: 'Settings - UltraWhisper',
       debugShowCheckedModeBanner: false,
-      theme: focusTheme(Brightness.light),
-      darkTheme: focusTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      // Black glass in light and dark mode alike, like the island.
+      theme: focusGlassTheme(),
       home: Scaffold(
         body: _isLoading
             ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
@@ -170,10 +167,19 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
       children: [
         // Header, padded down past the traffic-light buttons.
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 36, 12, 12),
+          padding: const EdgeInsets.fromLTRB(36, 40, 16, 12),
           child: Row(
             children: [
-              Text('Settings', style: FocusText.sheetTitle.copyWith(color: c.ink)),
+              const FocusOrbMark(),
+              const SizedBox(width: 14),
+              Text(
+                'Settings',
+                style: FocusText.sheetTitle.copyWith(
+                  color: c.ink,
+                  fontSize: 28,
+                  letterSpacing: -0.5,
+                ),
+              ),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.close, size: 18),
@@ -191,8 +197,6 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
             onSettingsChanged: _handleSettingsUpdate,
           ),
         ),
-
-        Divider(color: c.line),
 
         // Footer buttons
         Padding(
@@ -329,7 +333,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(36, 8, 36, 24),
       child: Center(
         child: ConstrainedBox(
           // Focus `measure`: one column, never wider than 640px.

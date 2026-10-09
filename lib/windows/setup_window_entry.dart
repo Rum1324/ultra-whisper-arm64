@@ -31,9 +31,8 @@ class SetupWindowApp extends StatelessWidget {
     return MaterialApp(
       title: 'Welcome to UltraWhisper',
       debugShowCheckedModeBanner: false,
-      theme: focusTheme(Brightness.light),
-      darkTheme: focusTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      // Black glass in light and dark mode alike, like the island.
+      theme: focusGlassTheme(),
       home: const Scaffold(body: SetupFlow()),
     );
   }
