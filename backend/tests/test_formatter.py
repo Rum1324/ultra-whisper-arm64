@@ -217,11 +217,3 @@ def test_claude_warm_never_raises(monkeypatch):
     monkeypatch.setattr(claude_client, "_client", boom)
     assert claude_client.warm("sk-ant-test") is False
 
-
-def test_claude_client_keeps_idle_connections_open(monkeypatch):
-    # The SDK default (5 s) dropped the connection between dictations.
-    pytest.importorskip("anthropic")  # installed in the app's python_bundle
-    monkeypatch.setattr(claude_client, "_clients", {})
-    client = claude_client._client("sk-ant-test")
-    pool = client._client._transport._pool
-    assert pool._keepalive_expiry == claude_client.KEEPALIVE_SECONDS >= 60

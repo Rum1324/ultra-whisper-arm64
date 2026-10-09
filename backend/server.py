@@ -120,6 +120,21 @@ class WhisperCppBackend:
         logger.info(f"Model loaded successfully with Metal GPU acceleration!")
         logger.info("Ready for fast transcriptions!")
 
+    def warm_up(self) -> None:
+        """
+        Run whisper once on a second of silence, so the first dictation after
+        launch doesn't pay Metal's first-run setup (measured 1.37 s vs 1.07 s
+        on an 11 s clip). Holds the model lock, so a dictation that starts
+        meanwhile waits for it rather than racing it. Never raises.
+        """
+        try:
+            started = time.perf_counter()
+            with self._model_lock:
+                self.model.transcribe(np.zeros(16000, dtype=np.int16), language='en', n_threads=4)
+            logger.info(f"⏱️ whisper warm-up: {time.perf_counter() - started:.2f}s")
+        except Exception as e:  # noqa: BLE001 - warming is best-effort
+            logger.info(f"whisper warm-up skipped: {type(e).__name__}")
+
     def create_meeting(self, meeting_id: str, data: dict) -> MeetingSession:
         """Create a meeting session from a `start_meeting` payload."""
         meeting = MeetingSession(
@@ -274,12 +289,13 @@ class WhisperCppBackend:
 
             # Use the in-memory model - MUCH faster!
             whisper_started = time.perf_counter()
-            result = self.model.transcribe(
-                audio_array,
-                language=whisper_language,
-                n_threads=4,
-                initial_prompt=initial_prompt
-            )
+            with self._model_lock:
+                result = self.model.transcribe(
+                    audio_array,
+                    language=whisper_language,
+                    n_threads=4,
+                    initial_prompt=initial_prompt
+                )
 
             logger.info(f"⏱️ whisper: {time.perf_counter() - whisper_started:.2f}s")
 
@@ -858,6 +874,9 @@ async def main():
         sys.stdout.flush()
 
         logger.info(f"WebSocket server started on {args.host}:{actual_port}")
+
+        # After SERVER_PORT, so the app's startup never waits on it.
+        threading.Thread(target=backend.warm_up, name='whisper-warm-up', daemon=True).start()
 
         await serve_until_signalled(server)
 

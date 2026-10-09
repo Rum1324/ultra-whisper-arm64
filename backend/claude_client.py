@@ -43,13 +43,11 @@ class ClaudeUnavailable:
 # first request on a fresh client measured 1.1 s against 0.8 s for later ones.
 _clients: dict[str, object] = {}
 
-# How long an idle connection stays open. The SDK's default is 5 s, shorter
-# than the gap between almost any two dictations, so every one paid a fresh
-# DNS + TCP + TLS handshake after the user stopped talking.
-KEEPALIVE_SECONDS = 300.0
-
-# The warm-up request below is a model lookup: a GET that uses no tokens and
-# is not billed. It only exists to open the connection while the user speaks.
+# Building a client connects to nothing, and the connection does not survive
+# the gap between dictations (measured 2026-10-09: a longer client keep-alive
+# changed nothing, the far end closes an idle connection within ~10 s). So the
+# warm-up below makes a request: a model lookup, a GET that uses no tokens and
+# is not billed, opening the connection while the user speaks.
 WARM_TIMEOUT = 3.0
 _lock = threading.Lock()
 
@@ -62,19 +60,7 @@ def _client(api_key: str):
         if client is None:
             # No retries: a retry doubles the worst-case wait, and the fallback
             # (the rule-based text) is already in hand.
-            import httpx2  # the HTTP library this SDK version ships on
-
-            client = anthropic.Anthropic(
-                api_key=api_key,
-                max_retries=0,
-                http_client=anthropic.DefaultHttpxClient(
-                    limits=httpx2.Limits(
-                        max_connections=4,
-                        max_keepalive_connections=2,
-                        keepalive_expiry=KEEPALIVE_SECONDS,
-                    )
-                ),
-            )
+            client = anthropic.Anthropic(api_key=api_key, max_retries=0)
             _clients.clear()  # a changed key replaces the old one
             _clients[api_key] = client
         return client

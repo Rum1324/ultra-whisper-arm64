@@ -414,3 +414,32 @@ def test_summarize_on_unknown_meeting_errors():
     asyncio.run(srv.handle_summarize(ws, "cmd-3", {"meetingId": "nope", "model": MODEL}))
 
     assert ws.of_type("error")[0]["data"]["code"] == "NO_SUCH_MEETING"
+
+
+# ---------------------------------------------------------------------------
+# Whisper warm-up
+# ---------------------------------------------------------------------------
+
+
+def test_warm_up_runs_whisper_once_under_the_model_lock():
+    seen = []
+
+    class LockCheckingModel(FakeModel):
+        def transcribe(self, audio, **kwargs):
+            seen.append(backend._model_lock.locked())
+            return super().transcribe(audio, **kwargs)
+
+    backend = _backend(LockCheckingModel())
+    backend.warm_up()
+    assert seen == [True]
+    assert backend.model.calls == [{"samples": SAMPLE_RATE, "language": "en"}]
+
+
+def test_warm_up_never_raises():
+    class Broken(FakeModel):
+        def transcribe(self, *args, **kwargs):
+            raise RuntimeError("metal unavailable")
+
+    backend = _backend(Broken())
+    backend.warm_up()
+    assert not backend._model_lock.locked()
