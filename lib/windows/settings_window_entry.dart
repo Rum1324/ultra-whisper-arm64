@@ -457,7 +457,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
             if (notes.tag == _settings.meetingSummaryModel)
               OllamaModelRow(
                 model: notes,
-                title: 'Meeting notes model',
+                title: 'Meeting notes model (beta)',
                 status: status,
                 client: _models,
               ),
@@ -594,7 +594,7 @@ class _SettingsWindowBodyState extends State<SettingsWindowBody> {
 
   List<Widget> _meetingsSection() {
     return [
-      const FocusLabel('Meetings'),
+      const FocusLabel('Meetings (beta)'),
       FocusGroup(
         children: [
           FocusSettingRow(

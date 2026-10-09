@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **UltraWhisper v0.9.9** - a fast, local-first macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
+This is **UltraWhisper v1.0.0** - a fast, local-first macOS transcription utility built with Flutter (macOS frontend) + Python backend (**whisper.cpp via hand-written ctypes bindings**, Metal GPU). It provides a minimal, glass-like floating UI for voice transcription with two toggle hotkeys and automatic pasting into the currently focused app.
 
 **Key Features:**
 - Local-only transcription for privacy and offline use
@@ -163,7 +163,7 @@ A release ships **no whisper model** (99 MB instead of 1.7 GB). Until `Settings.
 
 ## Project Status
 
-**Current State**: v0.9.0, shipping. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
+**Current State**: v1.0.0, shipping. Meeting notes are labelled **beta** in the UI and README until a real meeting has gone end to end. The Flutter UI, Swift hotkey/status-bar/paste layer, whisper.cpp backend, and standalone bundling are all implemented and working.
 
 **In progress**: meeting notes — record a meeting as two tracks, transcribe it, and generate a structured note with a local LLM. Merged to `main`. See [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md) and `backend/summarize/`.
 

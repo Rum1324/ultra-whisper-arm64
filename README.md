@@ -18,6 +18,7 @@
 
 - **🔒 Private by Default** - All transcription happens on your device. After the one-time model download no internet is needed, and no audio or text leaves your Mac — unless you choose Claude for AI formatting ([below](#ai-formatting-on-your-mac-or-with-claude))
 - **✨ AI Formatting** - Tidies each dictation: fillers out, natural punctuation, numbers as digits, Japanese 、。. Runs on your Mac, or on Claude Haiku with your own API key
+- **🗒️ Meeting Notes (beta)** - When a call starts, offers to transcribe your side and theirs, then writes a summary with decisions and action items using a local model. Beta: it works, but has not yet been tested end to end on real meetings
 - **⚡ Blazing Fast** - Metal GPU acceleration on Apple Silicon for real-time transcription
 - **📋 Auto-Paste** - Automatically pastes transcribed text into your current app when done
 - **🎙️ Two Hotkeys** - `⌥⇧R` to dictate, `⌥⇧E` to dictate and press Return
@@ -32,7 +33,7 @@
 
 ### Download Pre-Built App
 
-1. Download the latest `ultra-whisper-arm64-macos-v*.zip` (about 100 MB) from the [Releases](https://github.com/Rum1324/ultra-whisper-arm64/releases/latest) page
+1. Download the latest `ultra-whisper-arm64-macos-v*.zip` (about 40 MB) from the [Releases](https://github.com/Rum1324/ultra-whisper-arm64/releases/latest) page
 2. Unzip and move **UltraWhisper.app** to your Applications folder
 3. Open it once. macOS will refuse, because the app is not notarized by Apple — this is expected:
    - Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the UltraWhisper message, then confirm.
@@ -41,7 +42,7 @@
    - **Microphone** and **Accessibility** permissions
    - Your two shortcuts
    - The speech model, recommended for your Mac's memory and disk (190 MB – 1.6 GB download)
-   - Optional local AI — tidier dictation and meeting notes. UltraWhisper downloads its own copy of [Ollama](https://ollama.com) for these, or uses yours if it is already running. Nothing else needs installing.
+   - Optional local AI — tidier dictation and meeting notes (beta). UltraWhisper downloads its own copy of [Ollama](https://ollama.com) for these, or uses yours if it is already running. Nothing else needs installing.
 
 Models can be downloaded, switched or deleted later in **Settings → Speech model** and **Local AI**. They live in `~/Library/Application Support/UltraWhisper`.
 
