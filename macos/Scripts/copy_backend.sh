@@ -24,6 +24,9 @@ cp -f "${PROJECT_DIR}/backend/whisper_wrapper.py" "${BUNDLE_RESOURCES}/backend/"
 echo "Copying backend/postprocess.py..."
 cp -f "${PROJECT_DIR}/backend/postprocess.py" "${BUNDLE_RESOURCES}/backend/"
 
+echo "Copying backend/speech_gate.py..."
+cp -f "${PROJECT_DIR}/backend/speech_gate.py" "${BUNDLE_RESOURCES}/backend/"
+
 echo "Copying backend/dictation_formatter.py..."
 cp -f "${PROJECT_DIR}/backend/dictation_formatter.py" "${BUNDLE_RESOURCES}/backend/"
 
