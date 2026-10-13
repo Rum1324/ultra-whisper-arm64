@@ -19,6 +19,7 @@ import websockets
 import numpy as np
 from whisper_wrapper import WhisperModel
 from postprocess import apply_post_processing
+from speech_gate import check_speech
 import dictation_formatter
 import parent_watchdog
 from meeting import (
@@ -241,26 +242,13 @@ class WhisperCppBackend:
                     'avg_logprob': 0.0
                 }
 
-            # Energy-based VAD: reject clips with no speech-level energy anywhere.
-            #
-            # We measure the LOUDEST 30ms window, not the whole-clip average.
-            # In toggle mode a clip is padded with silence before you start
-            # speaking and after you stop; averaging over that silence drags a
-            # real (but short or quiet) utterance below the threshold and drops
-            # it entirely. The window peak is silence-invariant, so this only
-            # ever keeps MORE audio than the old whole-clip average — a clip
-            # that passed before still passes (peak >= mean), while quiet/short
-            # utterances that were wrongly dropped now get transcribed.
-            audio_float = audio_array.astype(np.float32) / 32768.0
-            frame = 480  # 30ms @ 16kHz
-            n_frames = len(audio_float) // frame
-            if n_frames > 0:
-                frames = audio_float[:n_frames * frame].reshape(n_frames, frame)
-                peak_rms = float(np.sqrt(np.mean(frames ** 2, axis=1)).max())
-            else:
-                peak_rms = float(np.sqrt(np.mean(audio_float ** 2)))
-            if peak_rms < 0.01:
-                logger.info(f"🔇 No speech-level energy (peak 30ms RMS={peak_rms:.4f}) — skipping to prevent hallucination")
+            # Energy-based VAD: reject clips with no speech anywhere, so whisper
+            # never hallucinates on silence. Loud clips pass on their loudest
+            # 30ms window as before; a whisper passes on its contrast with the
+            # clip's own noise floor (see speech_gate.py).
+            gate = check_speech(audio_array)
+            if not gate.has_speech:
+                logger.info(f"🔇 No speech ({gate.describe()}) — skipping to prevent hallucination")
                 return {
                     'session_id': session_id,
                     'text': '',
@@ -269,7 +257,7 @@ class WhisperCppBackend:
                     'avg_logprob': 0.0
                 }
 
-            logger.info(f"Transcribing {len(audio_array)/16000:.2f}s of audio for session {session_id} (peak 30ms RMS={peak_rms:.4f})")
+            logger.info(f"Transcribing {len(audio_array)/16000:.2f}s of audio for session {session_id} ({gate.describe()})")
 
             # Get language from session config, default to 'auto' for auto-detection
             # Handle None/null values by using 'auto'
