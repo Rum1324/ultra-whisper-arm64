@@ -862,6 +862,14 @@ struct whisper_state {
 
     whisper_mel mel;
 
+    // [UltraWhisper patch] the window whose encoder output kv_cross holds:
+    // its mel offset and the exp_n_audio_ctx it was encoded with. Language
+    // auto-detection encodes the window at offset 0, and whisper_full_with_state
+    // then decodes that same window; this lets it skip an identical second
+    // encoder pass. -1 when nothing valid is held (new mel, or a failed encode).
+    int32_t enc_mel_offset  = -1;
+    int32_t enc_n_audio_ctx = 0;
+
     whisper_batch batch;
 
     whisper_decoder decoders[WHISPER_MAX_DECODERS];
@@ -2364,6 +2372,9 @@ static bool whisper_encode_internal(
                    void * abort_callback_data) {
     const int64_t t_start_us = ggml_time_us();
 
+    // kv_cross is about to be overwritten; it is valid again only on success
+    wstate.enc_mel_offset = -1;
+
     // conv
     {
         auto & sched = wstate.sched_conv.sched;
@@ -2451,6 +2462,9 @@ static bool whisper_encode_internal(
 
     wstate.t_encode_us += ggml_time_us() - t_start_us;
     wstate.n_encode++;
+
+    wstate.enc_mel_offset  = mel_offset;
+    wstate.enc_n_audio_ctx = wstate.exp_n_audio_ctx;
 
     return !(abort_callback && abort_callback(abort_callback_data));
 }
@@ -3873,6 +3887,8 @@ void whisper_free_params(struct whisper_full_params * params) {
 }
 
 int whisper_pcm_to_mel_with_state(struct whisper_context * ctx, struct whisper_state * state, const float * samples, int n_samples, int n_threads) {
+    state->enc_mel_offset = -1; // new audio: the held encoder output no longer matches
+
     if (!log_mel_spectrogram(*state, samples, n_samples, WHISPER_SAMPLE_RATE, WHISPER_N_FFT, WHISPER_HOP_LENGTH, ctx->model.filters.n_mel, n_threads, ctx->model.filters, false, state->mel)) {
         WHISPER_LOG_ERROR("%s: failed to compute mel spectrogram\n", __func__);
         return -1;
@@ -3895,6 +3911,8 @@ int whisper_set_mel_with_state(
         WHISPER_LOG_ERROR("%s: invalid number of mel bands: %d (expected %d)\n", __func__, n_mel, ctx->model.filters.n_mel);
         return -1;
     }
+
+    state->enc_mel_offset = -1; // new audio: the held encoder output no longer matches
 
     state->mel.n_len     = n_len;
     state->mel.n_len_org = n_len;
@@ -7016,10 +7034,13 @@ int whisper_full_with_state(
             }
         }
 
-        // encode audio features starting at offset seek
-        if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
-            WHISPER_LOG_ERROR("%s: failed to encode\n", __func__);
-            return -6;
+        // encode audio features starting at offset seek, unless kv_cross already
+        // holds exactly this window (language auto-detection encodes offset 0)
+        if (state->enc_mel_offset != seek || state->enc_n_audio_ctx != state->exp_n_audio_ctx) {
+            if (!whisper_encode_internal(*ctx, *state, seek, params.n_threads, params.abort_callback, params.abort_callback_user_data)) {
+                WHISPER_LOG_ERROR("%s: failed to encode\n", __func__);
+                return -6;
+            }
         }
 
         // if there is a very short audio segment left to process, we remove any past prompt since it tends
