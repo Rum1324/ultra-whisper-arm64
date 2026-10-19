@@ -1446,10 +1446,11 @@ class AppService extends ChangeNotifier {
 
     _meetingTimer?.cancel();
     _meetingTimer = null;
+    // Stop before cancelling, so the mic's last chunks reach the meeting.
+    await _audioService.stopRecording();
     await _meetingAudioSubscription?.cancel();
     _meetingAudioSubscription = null;
 
-    await _audioService.stopRecording();
     await _micActivityService.stopSystemCapture();
 
     // Meeting notes are beta and can be switched off; the transcript is kept either way.

@@ -4,11 +4,19 @@ import 'package:record/record.dart';
 import '../utils/logger.dart';
 
 class AudioService {
-  final AudioRecorder _recorder = AudioRecorder();
+  AudioService({AudioRecorder? recorder}) : _recorder = recorder ?? AudioRecorder();
+
+  /// How long [stopRecording] waits for the plugin to close its stream after
+  /// `stop()`. record 6.1.2 closes it inside `stop()`, so this only bounds a
+  /// plugin that never does.
+  static const Duration streamDrainTimeout = Duration(milliseconds: 500);
+
+  final AudioRecorder _recorder;
   final StreamController<Uint8List> _audioController = StreamController<Uint8List>.broadcast();
   
   bool _isRecording = false;
   StreamSubscription? _recordingSubscription;
+  Completer<void>? _recordingStreamDone;
   
   Stream<Uint8List> get audioStream => _audioController.stream;
   bool get isRecording => _isRecording;
@@ -90,6 +98,8 @@ class AudioService {
       final stream = await _recorder.startStream(config);
       
       AppLogger.debug('Setting up stream listener...');
+      final streamDone = Completer<void>();
+      _recordingStreamDone = streamDone;
       _recordingSubscription = stream.listen(
         (data) {
           if (!_audioController.isClosed) {
@@ -116,6 +126,9 @@ class AudioService {
           AppLogger.error('Recording stream error', error);
           _audioController.addError(error);
         },
+        onDone: () {
+          if (!streamDone.isCompleted) streamDone.complete();
+        },
       );
       
       _isRecording = true;
@@ -136,12 +149,25 @@ class AudioService {
     }
     
     try {
-      AppLogger.debug('Cancelling recording subscription...');
-      await _recordingSubscription?.cancel();
-      
+      // Stop first, cancel last: chunks the plugin delivers between the stop
+      // request and the stream closing are the end of the last word, and a
+      // subscription cancelled before stop() threw them away.
       AppLogger.debug('Stopping audio recorder...');
       await _recorder.stop();
-      
+
+      AppLogger.debug('Waiting for the recorder stream to close...');
+      await _recordingStreamDone?.future.timeout(
+        streamDrainTimeout,
+        onTimeout: () => AppLogger.warning(
+          'Recorder stream did not close within ${streamDrainTimeout.inMilliseconds} ms',
+        ),
+      );
+
+      AppLogger.debug('Cancelling recording subscription...');
+      await _recordingSubscription?.cancel();
+      _recordingSubscription = null;
+      _recordingStreamDone = null;
+
       _isRecording = false;
       AppLogger.success('Audio recording stopped successfully');
     } catch (e, stackTrace) {
