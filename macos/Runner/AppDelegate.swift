@@ -134,6 +134,10 @@ class AppDelegate: FlutterAppDelegate {
       self?.statusBarEventChannel?.invokeMethod("quit", arguments: nil)
     }
 
+    statusBarController?.onToggleAiFormatting = { [weak self] in
+      self?.statusBarEventChannel?.invokeMethod("toggleAiFormatting", arguments: nil)
+    }
+
     statusBarController?.onToggleVolumeDuck = { [weak self] in
       self?.statusBarEventChannel?.invokeMethod("toggleVolumeDuck", arguments: nil)
     }

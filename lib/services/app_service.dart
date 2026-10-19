@@ -373,6 +373,7 @@ class AppService extends ChangeNotifier {
       AppLogger.debug('Updating status bar volume duck state...');
       await _statusBarService.setVolumeDuckState(_settings.duckVolumeDuringRecording);
       await _syncDeviceDuckMenuItem(await registerCurrentOutputDevice());
+      await _syncAiFormattingMenuItem(_settings);
 
       _updateState(_state.copyWith(recordingState: RecordingState.idle));
 
@@ -1106,6 +1107,11 @@ class AppService extends ChangeNotifier {
       ..enabled = newSettings.meetingAutoDetect
       ..neverList = newSettings.meetingNeverDetectBundleIds.toSet();
 
+    if (oldSettings.aiFormatting != newSettings.aiFormatting ||
+        oldSettings.aiFormattingEngine != newSettings.aiFormattingEngine) {
+      await _syncAiFormattingMenuItem(newSettings);
+    }
+
     // Update status bar menu checkmark if volume duck setting changed
     if (oldSettings.duckVolumeDuringRecording != newSettings.duckVolumeDuringRecording) {
       await _statusBarService.setVolumeDuckState(newSettings.duckVolumeDuringRecording);
@@ -1117,6 +1123,15 @@ class AppService extends ChangeNotifier {
 
     notifyListeners();
   }
+
+  Future<void> _syncAiFormattingMenuItem(Settings settings) =>
+      _statusBarService.setAiFormattingState(
+        enabled: settings.aiFormatting,
+        engineName: switch (settings.aiFormattingEngine) {
+          AiFormattingEngine.local => 'On This Mac',
+          AiFormattingEngine.claude => 'Claude',
+        },
+      );
 
   /// Only the size is applied here. The window is always clear and always
   /// floats (see main.dart); re-applying the old glass effect or lowering the
@@ -1220,6 +1235,12 @@ class AppService extends ChangeNotifier {
       await Future.delayed(const Duration(milliseconds: 100));
       // Exit the application
       exit(0);
+    };
+
+    _statusBarService.onToggleAiFormatting = () async {
+      final newValue = !_settings.aiFormatting;
+      await updateSettings(_settings.copyWith(aiFormatting: newValue));
+      AppLogger.info('AI formatting toggled to: $newValue');
     };
 
     _statusBarService.onToggleVolumeDuck = () async {

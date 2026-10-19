@@ -9,6 +9,7 @@ class StatusBarService {
   Function()? onStartRecording;
   Function()? onStopRecording;
   Function()? onToggleMeeting;
+  Function()? onToggleAiFormatting;
   Function()? onOpenSettings;
   Function()? onRestart;
   Function()? onCheckForUpdates;
@@ -64,6 +65,11 @@ class StatusBarService {
         onQuit?.call();
         break;
 
+      case 'toggleAiFormatting':
+        AppLogger.info('StatusBarService: AI formatting toggle requested from menu bar');
+        onToggleAiFormatting?.call();
+        break;
+
       case 'toggleVolumeDuck':
         AppLogger.info('StatusBarService: Volume duck toggle requested from menu bar');
         onToggleVolumeDuck?.call();
@@ -116,6 +122,25 @@ class StatusBarService {
       AppLogger.debug('StatusBarService: Status bar hidden');
     } catch (e) {
       AppLogger.error('StatusBarService: Failed to hide status bar', e);
+    }
+  }
+
+  /// Reflect the AI formatting switch. [engineName] goes in the title so the
+  /// menu says where dictation goes; empty falls back to a bare label.
+  Future<void> setAiFormattingState({
+    required bool enabled,
+    required String engineName,
+  }) async {
+    try {
+      await _statusBarChannel.invokeMethod('setAiFormattingState', {
+        'enabled': enabled,
+        'engineName': engineName,
+      });
+      AppLogger.debug(
+        'StatusBarService: AI formatting state set to $enabled ($engineName)',
+      );
+    } catch (e) {
+      AppLogger.error('StatusBarService: Failed to set AI formatting state', e);
     }
   }
 

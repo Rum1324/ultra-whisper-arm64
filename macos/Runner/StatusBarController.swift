@@ -6,6 +6,7 @@ class StatusBarController {
     private var menu: NSMenu?
     private var recordingMenuItem: NSMenuItem?
     private var meetingMenuItem: NSMenuItem?
+    private var aiFormattingMenuItem: NSMenuItem?
     private var volumeDuckMenuItem: NSMenuItem?
     private var skipDuckWhenBluetoothMenuItem: NSMenuItem?
     private var isRecording = false
@@ -17,6 +18,7 @@ class StatusBarController {
     var onStartRecording: (() -> Void)?
     var onStopRecording: (() -> Void)?
     var onToggleMeeting: (() -> Void)?
+    var onToggleAiFormatting: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onRestart: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
@@ -79,6 +81,20 @@ class StatusBarController {
         )
         meetingMenuItem?.target = self
         menu?.addItem(meetingMenuItem!)
+
+        menu?.addItem(NSMenuItem.separator())
+
+        // AI formatting toggle, the same switch as Settings → Advanced. The
+        // title names the engine because the two differ in more than speed:
+        // with Claude, each dictation leaves the Mac.
+        aiFormattingMenuItem = NSMenuItem(
+            title: "AI Formatting",
+            action: #selector(toggleAiFormatting),
+            keyEquivalent: ""
+        )
+        aiFormattingMenuItem?.target = self
+        aiFormattingMenuItem?.state = .on  // Default to on, as in Settings
+        menu?.addItem(aiFormattingMenuItem!)
 
         menu?.addItem(NSMenuItem.separator())
 
@@ -209,6 +225,19 @@ class StatusBarController {
         NSLog("StatusBarController: Status bar hidden")
     }
 
+    func setAiFormattingState(_ enabled: Bool, engineName: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            self.aiFormattingMenuItem?.state = enabled ? .on : .off
+            self.aiFormattingMenuItem?.title = engineName.isEmpty
+                ? "AI Formatting"
+                : "AI Formatting (\(engineName))"
+
+            NSLog("StatusBarController: AI formatting state updated to \(enabled) (\(engineName))")
+        }
+    }
+
     func setVolumeDuckState(_ enabled: Bool) {
         volumeDuckEnabled = enabled
 
@@ -253,6 +282,11 @@ class StatusBarController {
     @objc private func toggleMeeting() {
         NSLog("StatusBarController: Toggle meeting clicked")
         onToggleMeeting?()
+    }
+
+    @objc private func toggleAiFormatting() {
+        NSLog("StatusBarController: AI formatting toggle clicked")
+        onToggleAiFormatting?()
     }
 
     @objc private func toggleVolumeDuck() {
@@ -332,6 +366,22 @@ extension StatusBarController {
 
         case "hideStatusBar":
             controller.hideStatusBar()
+            result(nil)
+
+        case "setAiFormattingState":
+            guard let args = call.arguments as? [String: Any],
+                  let enabled = args["enabled"] as? Bool else {
+                result(FlutterError(
+                    code: "INVALID_ARGUMENTS",
+                    message: "Missing enabled argument",
+                    details: nil
+                ))
+                return
+            }
+            controller.setAiFormattingState(
+                enabled,
+                engineName: args["engineName"] as? String ?? ""
+            )
             result(nil)
 
         case "setVolumeDuckState":

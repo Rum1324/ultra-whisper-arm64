@@ -76,7 +76,7 @@ Open **Settings** from the menu bar to customize:
 
 ### AI formatting: on your Mac or with Claude
 
-**Settings → Advanced → AI formatting** cleans up each dictation after it is transcribed. Pick where it runs under **Engine**:
+**Settings → Advanced → AI formatting** cleans up each dictation after it is transcribed. To switch it on or off without opening Settings, click the menu bar icon → **AI Formatting**; the item names the engine in use. Pick where it runs under **Engine**:
 
 | | On this Mac | Claude (API key) |
 |---|---|---|
