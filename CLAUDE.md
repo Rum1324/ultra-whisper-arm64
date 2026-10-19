@@ -110,9 +110,10 @@ cd backend && pytest tests/ -q
 - `dictation_formatter.py` - optional LLM clean-up of each dictation (`gemma4:e4b` via Ollama, few-shot prompt); see *AI formatting* below
 - `summarize/` - meeting-note generation; see [docs/MEETING_PROTOCOL.md](docs/MEETING_PROTOCOL.md)
 
-**Two behaviors worth knowing before changing transcription:**
+**Three behaviors worth knowing before changing transcription:**
 - Energy VAD rejects a clip whose **loudest** 30ms window has RMS < 0.01. It deliberately measures the window peak, not the whole-clip average — averaging over the silence padding in toggle mode dropped short or quiet utterances.
 - The custom-vocabulary initial prompt is gated to English speech. It wrecked Japanese punctuation when applied unconditionally.
+- The vendored whisper.cpp carries **one local patch** (grep `UltraWhisper patch` in `backend/whisper.cpp/src/whisper.cpp`): `whisper_full` skips the encoder pass when `kv_cross` already holds that window, which language auto-detection leaves behind. Unpatched, every dictation in auto language encoded the clip twice — detection is a full encoder pass, not free. Measured 2026-10-17 with `backend/tools/bench_dictation_latency.py` (tiny, CPU): 2 → 1 passes, jfk.wav 1.50 → 0.73 s, identical text in 11 A/B scenarios. `build/` is not tracked: after pulling a change to `backend/whisper.cpp`, run `cmake --build backend/whisper.cpp/build -j --config Release` before running or bundling, and re-apply the patch when upgrading whisper.cpp.
 
 ### AI formatting
 

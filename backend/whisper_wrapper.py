@@ -255,7 +255,9 @@ class WhisperModel:
         """Cheaply detect the spoken language (encode + detect, no full decode).
 
         Returns a language code like 'en' or 'ja', or None if detection fails.
-        Costs one extra encoder pass (~0.3-0.6s for a few seconds of audio).
+        Costs one encoder pass (~0.3-0.6s for a few seconds of audio). It
+        leaves the mel and that pass's output in the context, which
+        transcribe() decodes from instead of encoding the same window again.
         """
         if audio.dtype != np.float32:
             audio = audio.astype(np.float32)
@@ -328,12 +330,16 @@ class WhisperModel:
         # need to know the language BEFORE deciding whether to keep the prompt.
         lang_map = {'en': 'en', 'english': 'en', 'ja': 'ja', 'japanese': 'ja'}
         effective_language = None
+        # True once detect_language() has computed the mel and encoded it.
+        mel_ready = False
         if language and language not in ('auto', ''):
             effective_language = lang_map.get(language.lower(), language.lower())
         elif initial_prompt:
-            # Only pay for pre-detection when a prompt is actually in play;
-            # otherwise whisper_full auto-detects internally for free.
+            # Pre-detect only when a prompt is in play; otherwise whisper_full
+            # auto-detects internally. Detection is one encoder pass either way,
+            # and the patched libwhisper reuses it for decoding (see CLAUDE.md).
             effective_language = self.detect_language(audio, n_threads)
+            mel_ready = effective_language is not None
             print(f"🔎 Pre-detected language for prompt gating: {effective_language}")
 
         # Gate the prompt: keep it only for English speech (its own language).
@@ -364,12 +370,14 @@ class WhisperModel:
         # Create pointer to audio data
         audio_ptr = audio.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
 
-        # Run transcription
+        # Run transcription. After pre-detection, n_samples=0 makes whisper_full
+        # decode the mel detect_language() left behind: recomputing it from the
+        # samples would discard the encoder output the patched libwhisper reuses.
         result = libwhisper.whisper_full(
             self.ctx,
             params,
             audio_ptr,
-            len(audio)
+            0 if mel_ready else len(audio)
         )
 
         if result != 0:
