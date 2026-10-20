@@ -1053,6 +1053,7 @@ class AppService extends ChangeNotifier {
   Future<void> _persistSettingsQuietly(Settings newSettings) async {
     _settings = newSettings;
     await _settingsService.saveSettings(newSettings);
+    unawaited(_settingsWindowService.pushSettings(newSettings.toJson()));
     notifyListeners();
   }
 
@@ -1067,6 +1068,7 @@ class AppService extends ChangeNotifier {
     final oldSettings = _settings;
     _settings = newSettings;
     await _settingsService.saveSettings(newSettings);
+    unawaited(_settingsWindowService.pushSettings(newSettings.toJson()));
     if (newSettings.showDictationOverlay != _state.isOverlayVisible) {
       _updateState(
         _state.copyWith(isOverlayVisible: newSettings.showDictationOverlay),

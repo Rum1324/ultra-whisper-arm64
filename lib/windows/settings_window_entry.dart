@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import '../models/model_catalog.dart';
 import '../models/notes_model_presets.dart';
 import '../models/settings.dart';
+import '../models/settings_patch.dart';
 import '../theme/focus_theme.dart';
 import '../widgets/focus_controls.dart';
 import '../widgets/hotkey_recorder.dart';
@@ -30,7 +32,19 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
   @override
   void initState() {
     super.initState();
+    DesktopMultiWindow.setMethodHandler(_handleMainCall);
     _loadSettings();
+  }
+
+  /// The main engine pushes every settings change (a menu bar toggle, a new
+  /// output device) here, so the window never shows or saves a stale copy.
+  Future<dynamic> _handleMainCall(MethodCall call, int fromWindowId) async {
+    if (call.method == 'settings_changed' && call.arguments is Map && !_isLoading) {
+      setState(() {
+        _settings = Settings.fromJson(Map<String, dynamic>.from(call.arguments as Map));
+      });
+    }
+    return null;
   }
 
   Future<void> _loadSettings() async {
@@ -78,10 +92,12 @@ class _SettingsWindowAppState extends State<SettingsWindowApp> {
       debugPrint(
         '_SettingsWindowAppState: Calling save_settings on main window...',
       );
+      // Only what the user changed: the main engine applies it to its
+      // current settings, so changes made since this window opened survive.
       final result = await DesktopMultiWindow.invokeMethod(
         0,
         'save_settings',
-        newSettings.toJson(),
+        settingsPatch(_settings!, newSettings),
       );
       debugPrint('_SettingsWindowAppState: save_settings returned: $result');
 
@@ -148,6 +164,20 @@ class _SettingsWindowContentState extends State<SettingsWindowContent> {
   void initState() {
     super.initState();
     _settings = widget.settings;
+  }
+
+  @override
+  void didUpdateWidget(SettingsWindowContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Settings changed in the main engine: keep the user's unsaved edits,
+    // take everything else from the new copy.
+    if (!identical(oldWidget.settings, widget.settings)) {
+      _settings = rebaseSettings(
+        base: oldWidget.settings,
+        edited: _settings,
+        latest: widget.settings,
+      );
+    }
   }
 
   void _handleSettingsUpdate(Settings newSettings) {

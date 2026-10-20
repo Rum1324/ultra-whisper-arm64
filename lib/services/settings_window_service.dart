@@ -17,6 +17,18 @@ class _ManagedWindow {
 
   bool get isOpen => _controller != null;
 
+  /// Calls [method] on the window if it is open. A window closed with the
+  /// red button is gone without telling Dart, so a failure is expected.
+  Future<void> invoke(String method, dynamic arguments) async {
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      await DesktopMultiWindow.invokeMethod(controller.windowId, method, arguments);
+    } catch (e) {
+      debugPrint('Could not reach the $argument window: $e');
+    }
+  }
+
   Future<void> open() async {
     // Closing with the red button (or ⌘W) never reaches Dart: the plugin drops
     // the window natively, and `show()` on a dropped id is a silent no-op. So
@@ -97,6 +109,12 @@ class SettingsWindowService {
   bool get isSetupWindowOpen => _setup.isOpen;
 
   Future<void> openSettingsWindow() => _settings.open();
+
+  /// Show an open Settings window the settings as they are now, so it neither
+  /// displays nor saves a stale copy.
+  Future<void> pushSettings(Map<String, dynamic> json) =>
+      _settings.invoke('settings_changed', json);
+
   Future<void> closeSettingsWindow() => _settings.close();
 
   Future<void> openSetupWindow() => _setup.open();

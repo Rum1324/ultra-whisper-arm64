@@ -10,6 +10,7 @@ import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'models/app_state.dart';
 import 'models/settings.dart';
+import 'models/settings_patch.dart';
 import 'services/app_service.dart';
 import 'services/audio_service.dart';
 import 'services/settings_service.dart';
@@ -328,12 +329,14 @@ class _UltraWhisperAppState extends State<UltraWhisperApp>
         return _appService.anthropicKeys.delete();
 
       case 'save_settings':
-        // Settings window wants to save new settings
-        // Convert from platform channel Map<Object?, Object?> to Map<String, dynamic>
-        final settingsJson = Map<String, dynamic>.from(call.arguments as Map);
-        debugPrint('Settings window saving new settings');
-        final newSettings = Settings.fromJson(settingsJson);
-        await _appService.updateSettings(newSettings);
+        // The fields the user changed in the Settings window, applied to the
+        // current settings rather than replacing them: anything changed since
+        // the window opened (a menu bar toggle, a new output device) stays.
+        final patch = Map<String, dynamic>.from(call.arguments as Map);
+        debugPrint('Settings window saving: ${patch.keys.join(', ')}');
+        await _appService.updateSettings(
+          applySettingsPatch(_appService.settings, patch),
+        );
         return true;
 
       default:
